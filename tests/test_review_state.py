@@ -8,7 +8,7 @@ from pathlib import Path
 SCRIPT = (
     Path(__file__).resolve().parents[1]
     / "plugins"
-    / "ai-for-academic-writing"
+    / "ai-research-accelerator"
     / "skills"
     / "github-paper-review-workflow"
     / "scripts"

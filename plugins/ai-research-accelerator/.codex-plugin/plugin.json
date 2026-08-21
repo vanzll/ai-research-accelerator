@@ -1,0 +1,38 @@
+{
+  "name": "ai-research-accelerator",
+  "version": "0.1.0",
+  "description": "An author-first workflow for accelerating research from experiment planning and analysis through top-conference publication.",
+  "author": {
+    "name": "vanzll",
+    "url": "https://github.com/vanzll"
+  },
+  "homepage": "https://github.com/vanzll/ai-research-accelerator",
+  "repository": "https://github.com/vanzll/ai-research-accelerator",
+  "license": "MIT",
+  "keywords": [
+    "academic-writing",
+    "machine-learning",
+    "paper-review",
+    "experiments",
+    "visualization"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "AI Research Accelerator",
+    "shortDescription": "AI for accelerating research end to end.",
+    "longDescription": "Plan formal experiments, analyze and plot results, write insight-driven papers, and process author review through a reproducible research workflow.",
+    "developerName": "vanzll",
+    "category": "Productivity",
+    "capabilities": [
+      "Write",
+      "Research",
+      "Data Analysis"
+    ],
+    "websiteURL": "https://github.com/vanzll/ai-research-accelerator",
+    "defaultPrompt": [
+      "Shape my evidence into an insightful paper story.",
+      "Process author feedback on this paper PR.",
+      "Audit my paper experiments and figures."
+    ]
+  }
+}

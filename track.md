@@ -2,8 +2,9 @@
 
 ## 2026-08-21: Initial dual-agent plugin
 
-- Repository/plugin name: `ai-for-academic-writing`.
-- Distribution layout: one marketplace repository containing `plugins/ai-for-academic-writing`, with both Codex and Claude Code manifests and shared Agent Skills.
+- Initial repository/plugin name: `ai-for-academic-writing`; renamed to `ai-research-accelerator` before wider use.
+- Display name: **AI Research Accelerator**. Tagline: **AI for Accelerating Research**.
+- Distribution layout: one marketplace repository containing `plugins/ai-research-accelerator`, with both Codex and Claude Code manifests and shared Agent Skills.
 - Main skills:
   - `write-insightful-topconf-paper`
   - `github-paper-review-workflow`
@@ -20,7 +21,7 @@
   - Codex `quick_validate.py` for all four skills
   - Codex `validate_plugin.py`
   - `claude plugin validate .`
-- Private GitHub repository: `https://github.com/vanzll/ai-for-academic-writing`.
+- Private GitHub repository after rename: `https://github.com/vanzll/ai-research-accelerator`.
 - Initial published implementation commit: `94878f8ee42f618c7bbb24784d4a98bb46fad3ca`.
 - GitHub Actions `Validate plugin` passed for the initial commit.
-- A clean, isolated `CODEX_HOME` successfully added the GitHub marketplace and installed `ai-for-academic-writing@ai-for-academic-writing` version `0.1.0`.
+- A clean, isolated `CODEX_HOME` successfully installed the original package before rename; the renamed package is revalidated separately.

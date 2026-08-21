@@ -1,6 +1,6 @@
-# AI for Academic Writing
+# AI Research Accelerator
 
-An author-first plugin for Codex and Claude Code. It packages four primary skills:
+**AI for Accelerating Research.** An author-first plugin for Codex and Claude Code that covers the research workflow from experiments to publication. It packages four primary skills:
 
 - `write-insightful-topconf-paper`: build and audit insight-driven ML papers;
 - `github-paper-review-workflow`: revise Chinese semantic Markdown and formal English LaTeX through GitHub PR review;
@@ -26,21 +26,21 @@ Missing integrations must be reported as verification gaps; they must not be sim
 ## Install in Codex
 
 ```bash
-codex plugin marketplace add vanzll/ai-for-academic-writing --ref main
-codex plugin add ai-for-academic-writing@ai-for-academic-writing
+codex plugin marketplace add vanzll/ai-research-accelerator --ref main
+codex plugin add ai-research-accelerator@ai-research-accelerator
 ```
 
 ## Install in Claude Code
 
 ```bash
-claude plugin marketplace add vanzll/ai-for-academic-writing
-claude plugin install ai-for-academic-writing@ai-for-academic-writing
+claude plugin marketplace add vanzll/ai-research-accelerator
+claude plugin install ai-research-accelerator@ai-research-accelerator
 ```
 
 For local development:
 
 ```bash
-claude --plugin-dir ./plugins/ai-for-academic-writing
+claude --plugin-dir ./plugins/ai-research-accelerator
 ```
 
 The repository is private by default, so GitHub authentication must grant access.

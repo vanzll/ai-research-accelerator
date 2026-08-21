@@ -1,13 +1,13 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
-  "name": "ai-for-academic-writing",
+  "name": "ai-research-accelerator",
   "version": "0.1.0",
-  "description": "An author-first workflow for planning, writing, reviewing, managing experiments, and plotting results for top-conference papers.",
+  "description": "An author-first workflow for accelerating research from experiment planning and analysis through top-conference publication.",
   "author": {
     "name": "vanzll",
     "url": "https://github.com/vanzll"
   },
-  "repository": "https://github.com/vanzll/ai-for-academic-writing",
+  "repository": "https://github.com/vanzll/ai-research-accelerator",
   "license": "MIT",
   "keywords": [
     "academic-writing",

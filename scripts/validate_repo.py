@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN = ROOT / "plugins" / "ai-for-academic-writing"
+PLUGIN = ROOT / "plugins" / "ai-research-accelerator"
 REQUIRED_SKILLS = {
     "github-paper-review-workflow",
     "manage-paper-experiments",
@@ -51,11 +51,11 @@ def main() -> int:
     claude_market = load_json(ROOT / ".claude-plugin" / "marketplace.json")
 
     for manifest in (codex, claude):
-        assert manifest["name"] == "ai-for-academic-writing"
+        assert manifest["name"] == "ai-research-accelerator"
         assert re.fullmatch(r"\d+\.\d+\.\d+", manifest["version"])
     assert codex["version"] == claude["version"] == claude_market["version"]
-    assert codex_market["plugins"][0]["source"]["path"] == "./plugins/ai-for-academic-writing"
-    assert claude_market["plugins"][0]["source"] == "./plugins/ai-for-academic-writing"
+    assert codex_market["plugins"][0]["source"]["path"] == "./plugins/ai-research-accelerator"
+    assert claude_market["plugins"][0]["source"] == "./plugins/ai-research-accelerator"
 
     skill_names = {path.name for path in (PLUGIN / "skills").iterdir() if path.is_dir()}
     assert REQUIRED_SKILLS <= skill_names, f"missing skills: {sorted(REQUIRED_SKILLS - skill_names)}"

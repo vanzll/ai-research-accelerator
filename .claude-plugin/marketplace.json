@@ -1,15 +1,15 @@
 {
-  "name": "ai-for-academic-writing",
+  "name": "ai-research-accelerator",
   "owner": {
     "name": "vanzll"
   },
-  "description": "Author-first academic-writing workflows for AI coding agents.",
+  "description": "Author-first workflows for accelerating research from experiments to publication.",
   "version": "0.1.0",
   "plugins": [
     {
-      "name": "ai-for-academic-writing",
-      "source": "./plugins/ai-for-academic-writing",
-      "description": "Plan, write, review, validate, and report rigorous ML papers.",
+      "name": "ai-research-accelerator",
+      "source": "./plugins/ai-research-accelerator",
+      "description": "Plan experiments, analyze results, write papers, and process author review.",
       "version": "0.1.0",
       "author": {
         "name": "vanzll"

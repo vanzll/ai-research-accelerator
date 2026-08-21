@@ -1,14 +1,14 @@
 {
-  "name": "ai-for-academic-writing",
+  "name": "ai-research-accelerator",
   "interface": {
-    "displayName": "Ai For Academic Writing"
+    "displayName": "AI Research Accelerator"
   },
   "plugins": [
     {
-      "name": "ai-for-academic-writing",
+      "name": "ai-research-accelerator",
       "source": {
         "source": "local",
-        "path": "./plugins/ai-for-academic-writing"
+        "path": "./plugins/ai-research-accelerator"
       },
       "policy": {
         "installation": "AVAILABLE",
