@@ -1,0 +1,4 @@
+interface:
+  display_name: "GitHub Paper Review Workflow"
+  short_description: "Run author-first paper revisions through GitHub review."
+  default_prompt: "Create or process an academic-paper pull request, prioritize human author review comments, synchronize Chinese semantic Markdown with formal English LaTeX, validate the paper, and report the merge gate."

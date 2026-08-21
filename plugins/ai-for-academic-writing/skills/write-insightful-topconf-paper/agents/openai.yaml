@@ -1,0 +1,4 @@
+interface:
+  display_name: "Insightful Top-Conference Writing"
+  short_description: "Write clear, evidence-backed, insight-driven conference papers"
+  default_prompt: "Use $write-insightful-topconf-paper to turn my evidence and observations into a clear, insight-driven top-conference paper."

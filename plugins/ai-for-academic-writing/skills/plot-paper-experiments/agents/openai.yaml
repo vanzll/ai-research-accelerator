@@ -1,0 +1,4 @@
+interface:
+  display_name: "Plot Paper Experiments"
+  short_description: "Create publication-ready W&B experiment figures"
+  default_prompt: "Create a publication-ready experiment figure from W&B data, confirming plot semantics and colors before rendering."

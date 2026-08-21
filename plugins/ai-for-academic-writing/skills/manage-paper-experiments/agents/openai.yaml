@@ -1,0 +1,4 @@
+interface:
+  display_name: "Paper Experiment Manager"
+  short_description: "Own the paper-wide ledger and robust experiment queues"
+  default_prompt: "Use $manage-paper-experiments to reconcile my paper-wide experiment ledger with W&B and own robust formal experiment queues through verified W&B startup for every run, including automatic recovery from pre-start failures."

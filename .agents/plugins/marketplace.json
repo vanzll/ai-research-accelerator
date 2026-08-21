@@ -1,0 +1,20 @@
+{
+  "name": "ai-for-academic-writing",
+  "interface": {
+    "displayName": "Ai For Academic Writing"
+  },
+  "plugins": [
+    {
+      "name": "ai-for-academic-writing",
+      "source": {
+        "source": "local",
+        "path": "./plugins/ai-for-academic-writing"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
