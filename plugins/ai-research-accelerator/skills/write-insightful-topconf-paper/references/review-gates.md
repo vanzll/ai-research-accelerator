@@ -7,7 +7,8 @@
 3. Clarity gate
 4. Visual and delivery gate
 5. Reviewer red team
-6. Severity and readiness
+6. Clean-context technical review
+7. Severity and readiness
 
 ## Story gate
 
@@ -102,6 +103,31 @@ Produce two independent readings.
 - Where does the paper overgeneralize?
 
 Write the crux: the one issue on which acceptance most depends. Fix or explicitly bound it before low-severity prose work.
+
+## Clean-context technical review
+
+Run this gate after a material technical revision and before opening a paper PR or declaring a submission candidate. A material revision includes a new or changed central claim, theorem, proof, algorithm, mechanism, quantitative result, prior-work attribution, novelty statement, or literature comparison. Punctuation and purely local style edits do not require it.
+
+Use a fresh subagent or isolated agent context. Provide only:
+
+- the exact candidate section or compiled paper;
+- the minimum notation and definitions needed to read it;
+- the bibliography entries and primary sources cited by the reviewed claims;
+- a neutral instruction to find errors rather than confirm correctness.
+
+Do not provide the author conversation, discovery history, intended conclusion, previous reviews, suspected bug, proposed correction, acceptance strategy, or main agent's confidence. These leak the target answer and invalidate independence.
+
+Require the reviewer to reconstruct each technical claim before judging it, then return findings as `Blocker`, `Major`, or `Minor`, each with an exact location, the failing statement, why it may be wrong, the assumption or source that decides it, and the smallest defensible correction. The review must check:
+
+- factual and chronological accuracy;
+- whether citations support the attached sentence rather than merely the topic;
+- mathematical assumptions, conditioning, signs, constants, and quantifiers;
+- whether the proof establishes the stated scope;
+- whether an empirical diagnostic is being promoted into a causal claim;
+- whether prior work is described charitably and novelty is bounded correctly;
+- whether terminology changes the technical meaning.
+
+Use the reviewer's native knowledge to surface contradictions and missing conditions, not as final authority. Verify every source-dependent or temporally unstable finding against the primary paper, official artifact, or experiment record. The writing agent adjudicates conflicts, applies accepted fixes, and reruns the isolated review after any material change. If the runtime cannot create a genuinely fresh context, record the gate as unavailable; an additional pass in the same context is not an independent technical review.
 
 ## Severity and readiness
 

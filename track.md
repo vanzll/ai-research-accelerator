@@ -25,3 +25,10 @@
 - Initial published implementation commit: `94878f8ee42f618c7bbb24784d4a98bb46fad3ca`.
 - GitHub Actions `Validate plugin` passed for the initial commit.
 - A clean, isolated `CODEX_HOME` successfully installed the original package before rename; the renamed package is revalidated separately.
+
+## 2026-08-21: Clean-context technical review gate
+
+- Added a mandatory clean-context technical review for material scientific revisions and before paper PRs or submission candidates.
+- The reviewer receives only the candidate artifact, minimal notation, and cited primary sources. Author intent, prior debate, suspected flaws, proposed fixes, and desired verdict are withheld to prevent answer leakage.
+- Native model knowledge is used to detect possible errors, not as evidence. Source-dependent and unstable findings must be checked against primary sources or experiment records.
+- The reviewer reports location-specific Blocker/Major/Minor findings; the writing agent adjudicates them and reruns the isolated review after material fixes. When a fresh context is unavailable, the gate must be reported as not run.

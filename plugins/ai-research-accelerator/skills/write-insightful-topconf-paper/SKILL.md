@@ -471,6 +471,10 @@ Then perform two opposing reviews:
 
 Resolve the skeptic's strongest valid objection before polishing minor language. Read [review-gates.md](references/review-gates.md) for the full checklist.
 
+## Require a clean-context technical review
+
+After any material technical revision, and before a paper PR or submission candidate, use a fresh subagent when the runtime supports one. Give it only the candidate artifact, minimal symbol definitions, and cited primary sources; withhold author intent, prior debate, suspected flaws, proposed fixes, and the desired verdict. Ask it to reconstruct and audit factual claims, assumptions, derivations, attribution, terminology, and claim scope. Its native knowledge is a fault detector, not evidence: verify source-specific or unstable facts against primary sources. The writing agent must adjudicate findings and rerun the review after material fixes. If no isolated reviewer is available, report that this gate was not run rather than simulating independence in the current context. Follow the clean-context protocol in [review-gates.md](references/review-gates.md).
+
 ## Verify the artifact
 
 For LaTeX work:
