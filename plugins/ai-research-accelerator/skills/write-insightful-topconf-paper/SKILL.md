@@ -341,6 +341,46 @@ the prose; do not require an `Intuition.` heading. Valid forms include
 explanation with no explicit cue. Do not merely restate the equation symbol by
 symbol. Avoid the unidiomatic phrase `Intuitively understanding`.
 
+## Design notation for first-pass comprehension
+
+Before drafting a formula-heavy section, create an internal notation contract
+with one row per symbol: meaning, mathematical type or shape, conditioning and
+suppressed arguments, frozen/current status, first definition, and nearby
+symbols it could be confused with. The reader should never need to infer these
+properties from an equation.
+
+- Define an object before its first equation-level use. When dependencies are
+  suppressed, state the full form once, such as
+  `$q_t=q(x_t,t,c)$`, before using the shorter notation.
+- Encode one semantic distinction per visual convention. For example, a bar may
+  consistently denote a conditional population mean, while a descriptive
+  subscript may identify a rollout field. Do not stack unexplained letter
+  superscripts to encode source, process, time, and optimization status at once.
+- Prefer semantic names for story-critical objects and short names for local
+  algebra. A local abbreviation must be introduced immediately before the
+  derivation, used within a small scope, and must not collide with a global
+  parameter, distribution index, reward, timestep, or standard operator.
+- Do not reuse one symbol for different concepts in neighboring sections. In
+  particular, audit tilt parameters, loss coefficients, residuals, advantages,
+  and probability ratios for collisions.
+- Distinguish random sample targets, learned fields, population-optimal fields,
+  and actual sampler fields explicitly. Similar vector spaces do not make these
+  objects interchangeable.
+- Use a new symbol only when it reduces total reading cost. If an object appears
+  once or twice, spelling out the expression or naming it in prose is often
+  clearer than adding notation.
+- Immediately after each central display, state in words what each side
+  represents and which quantity the equation changes. Explain the relation, not
+  a symbol-by-symbol transcription.
+
+Before a paper PR, give a fresh clean-context subagent only the candidate
+artifact and ask it to reconstruct the notation contract without seeing the
+author's intended glossary. Treat every missing, ambiguous, overloaded, or
+incorrectly reconstructed symbol as a clarity defect. Revise until a first-time
+expert can identify for every central equation: what is random, what is learned,
+what is conditioned on, what is frozen, and what space the equality inhabits.
+This notation audit complements, rather than replaces, the technical review.
+
 ## Control equation density
 
 Classify each formula before typesetting it:
