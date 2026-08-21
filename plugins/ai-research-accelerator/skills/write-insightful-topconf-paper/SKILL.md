@@ -12,7 +12,9 @@ Apply these priorities in order:
 1. Preserve scientific truth. Never invent evidence, results, citations, chronology, mechanisms, or novelty.
 2. Follow the user's locked framing, terminology, scope, and task mode. If the user asks to discuss logic, do not start drafting.
 3. Make the paper insightful. Let observations expose a tension, let an insight resolve it, and let the method appear as the minimal response.
-4. Make the paper easy to understand. Prefer the simplest accurate word and the shortest complete explanation.
+4. Make the paper easy to understand. Prefer the simplest accurate word, the
+   fewest necessary symbols, and the shortest complete explanation. Plain and
+   direct language outranks academic-sounding language.
 5. Satisfy the current official venue rules. Verify changing requirements rather than recalling them from memory.
 
 Treat prose as the final encoding of a scientific argument, not as the starting point.
@@ -346,16 +348,35 @@ symbol. Avoid the unidiomatic phrase `Intuitively understanding`.
 Before drafting a formula-heavy section, create an internal notation contract
 with one row per symbol: meaning, mathematical type or shape, conditioning and
 suppressed arguments, frozen/current status, first definition, and nearby
-symbols it could be confused with. The reader should never need to infer these
-properties from an equation.
+symbols it could be confused with. Treat it as a symbol budget: every symbol
+must save more reading effort than it creates. The reader should never need to
+infer these properties from an equation.
+
+- Use as few symbols as possible while preserving the exact claim. Start from
+  familiar letters such as `$x$`, `$v$`, `$r$`, and `$t$`; prefer a short,
+  descriptive subscript such as `old`, `fwd`, or `target` when a distinction is
+  necessary. Do not introduce a bar, hat, tilde, uncommon alphabet, stacked
+  superscript, or new abbreviation merely to make notation look formal.
+- Prefer naming the operation over naming an abstract object. For example,
+  define a forward field in plain language as the conditional average of the
+  sample velocity target after re-noising endpoints. Use a specialized term
+  such as `population field` only if it recurs, prevents ambiguity, and is
+  immediately explained in ordinary language.
+- Defensively define every nonstandard symbol and term at first use. The local
+  explanation must tell the reader what is averaged or transformed, what is
+  conditioned on, and whether the object is sampled, learned, frozen, or
+  idealized. Do not rely on a later glossary to repair an opaque first use.
+- If an object appears only once or twice, write the expression or explain it
+  in prose instead of assigning a new symbol. After drafting, try deleting each
+  symbol; keep it only when the surrounding section becomes harder to read.
 
 - Define an object before its first equation-level use. When dependencies are
   suppressed, state the full form once, such as
   `$q_t=q(x_t,t,c)$`, before using the shorter notation.
-- Encode one semantic distinction per visual convention. For example, a bar may
-  consistently denote a conditional population mean, while a descriptive
-  subscript may identify a rollout field. Do not stack unexplained letter
-  superscripts to encode source, process, time, and optimization status at once.
+- Encode one semantic distinction per visual convention. Prefer descriptive
+  subscripts over visual decoration. If a bar or superscript is truly needed,
+  give it one stable meaning and explain that meaning before use. Do not stack
+  conventions to encode source, process, time, and optimization status at once.
 - Prefer semantic names for story-critical objects and short names for local
   algebra. A local abbreviation must be introduced immediately before the
   derivation, used within a small scope, and must not collide with a global
@@ -366,20 +387,19 @@ properties from an equation.
 - Distinguish random sample targets, learned fields, population-optimal fields,
   and actual sampler fields explicitly. Similar vector spaces do not make these
   objects interchangeable.
-- Use a new symbol only when it reduces total reading cost. If an object appears
-  once or twice, spelling out the expression or naming it in prose is often
-  clearer than adding notation.
 - Immediately after each central display, state in words what each side
   represents and which quantity the equation changes. Explain the relation, not
   a symbol-by-symbol transcription.
 
 Before a paper PR, give a fresh clean-context subagent only the candidate
-artifact and ask it to reconstruct the notation contract without seeing the
-author's intended glossary. Treat every missing, ambiguous, overloaded, or
-incorrectly reconstructed symbol as a clarity defect. Revise until a first-time
-expert can identify for every central equation: what is random, what is learned,
-what is conditioned on, what is frozen, and what space the equality inhabits.
-This notation audit complements, rather than replaces, the technical review.
+artifact and ask it to explain every central equation in plain language and
+reconstruct the notation contract without seeing the author's intended
+glossary. Treat every missing, ambiguous, overloaded, unnecessarily decorated,
+or incorrectly reconstructed symbol or term as a clarity defect. Revise until a
+first-time expert can identify for every central equation: what is random, what
+is learned, what is conditioned on, what is frozen, and what space the equality
+inhabits. This notation audit complements, rather than replaces, the technical
+review.
 
 ## Control equation density
 
@@ -401,13 +421,19 @@ consolidation, not smaller type.
 ## Write for fast comprehension
 
 - Use the simplest accurate word. Prefer `use` over `utilize`, `show` over `demonstrate` when no stronger meaning is needed, and concrete verbs over nominalizations.
+- Prefer ordinary, direct words even when a more academic synonym exists. Use
+  specialized vocabulary only when it is a standard term or expresses a
+  distinction that plain language cannot state as precisely. Never make prose
+  harder to read merely to sound scholarly.
 - Give each sentence one main job. Keep the subject close to its verb.
 - Put the claim early, then evidence or reasoning, then its implication.
 - Use one stable term per technical concept. Do not rotate synonyms for variety.
-- Prefer established technical terms over conversational metaphors. For
-  example, write `positive/negative fitting`, `reward-improving update`,
-  `restoration`, and `orthogonal function movement` rather than `push/pull`,
-  `pushing away`, `the signal gets swallowed`, or `sideways movement`.
+- Prefer broadly understood technical terms over conversational metaphors. For
+  example, write `positive/negative fitting`, `reward-improving update`, and
+  `restoration` rather than `push/pull`, `pushing away`, or `the signal gets
+  swallowed`. When a technical phrase is less clear than a literal description,
+  use the literal description and define the technical term only if it is needed
+  later.
 - Use an informal metaphor only when it materially improves intuition. Put it
   in quotation marks, define its technical meaning immediately, and do not use
   it as the name of a theorem, subsection, variable, or primary mechanism.
