@@ -20,3 +20,7 @@
   - Codex `quick_validate.py` for all four skills
   - Codex `validate_plugin.py`
   - `claude plugin validate .`
+- Private GitHub repository: `https://github.com/vanzll/ai-for-academic-writing`.
+- Initial published implementation commit: `94878f8ee42f618c7bbb24784d4a98bb46fad3ca`.
+- GitHub Actions `Validate plugin` passed for the initial commit.
+- A clean, isolated `CODEX_HOME` successfully added the GitHub marketplace and installed `ai-for-academic-writing@ai-for-academic-writing` version `0.1.0`.
