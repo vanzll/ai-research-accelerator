@@ -1,11 +1,17 @@
 # AI Research Accelerator
 
-**AI for Accelerating Research.** An author-first plugin for Codex and Claude Code that covers the research workflow from experiments to publication. It packages four primary skills:
+**AI for Accelerating Research.** An author-first plugin for Codex and Claude Code that covers the research workflow from experiments to publication. It packages five primary skills:
 
+- `long-task-relay`: monitor long-running work with a token-free rule-based watcher that wakes the exact agent conversation only when judgment is needed;
 - `write-insightful-topconf-paper`: build and audit insight-driven ML papers;
 - `github-paper-review-workflow`: revise Chinese semantic Markdown and formal English LaTeX through GitHub PR review;
 - `manage-paper-experiments`: maintain the paper-wide experiment ledger and reproducible execution queues;
 - `plot-paper-experiments`: produce traceable publication figures from experiment data.
+
+The relay replaces model-driven `sleep`/poll loops with a persistent local
+watcher. It can observe logs, progress, markers, processes, and tmux sessions,
+then resume an exact Codex thread, invoke an explicit agent resume command,
+inject into a verified tmux TUI, or write a durable event inbox.
 
 ## Optional integrations
 

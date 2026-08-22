@@ -9,7 +9,10 @@ Use these patterns to generate remote Codex prompts. Adapt paths and commands to
   failures.
 - Use an event-driven relay watcher when the next action requires interpreting
   W&B or applying a promotion rule. The watcher performs local observation only
-  and wakes the exact Codex conversation once per persisted event.
+  and wakes the exact Codex conversation once per persisted event. Use the
+  Plugin's `long-task-relay` skill for the durable state, event deduplication,
+  exact-thread delivery, and bounded retry protocol; add only the experiment-
+  specific predicates and context.
 - Never keep Codex alive to perform periodic status checks. Mechanical polling
   must not invoke a model.
 

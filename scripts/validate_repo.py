@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugins" / "ai-research-accelerator"
 REQUIRED_SKILLS = {
     "github-paper-review-workflow",
+    "long-task-relay",
     "manage-paper-experiments",
     "plot-paper-experiments",
     "write-insightful-topconf-paper",

@@ -38,3 +38,23 @@
 - The contract records each symbol's meaning, type, conditioning, frozen/current status, first definition, and collision risks.
 - Before a paper PR, a clean-context reviewer must reconstruct this contract from the candidate alone; ambiguous or incorrectly reconstructed notation blocks the PR until revised.
 - The rule also prohibits overloaded nearby symbols, unexplained stacked superscripts, and conflating sample targets, learned fields, population fields, and sampler fields.
+
+## 2026-08-22 - Add token-free long-task relay
+
+- Added `long-task-relay` as the Plugin's fifth primary skill and raised both
+  Codex and Claude manifests to version `0.2.0`.
+- Added a standard-library relay CLI that monitors logs, progress, durable
+  markers, PIDs, and tmux sessions without invoking a model during polling.
+- Delivery modes include exact Codex thread resume, a trusted generic resume
+  command, PID-verified tmux TUI injection, and a durable inbox fallback.
+- Relay state is atomic and versioned. Events are deduplicated by generation;
+  thread-idle checks, bounded retries, backoff, heartbeat/status, acknowledgement,
+  re-arm, cancellation, and synthetic delivery tests are included.
+- The watcher is observation-only. It may summarize and deliver declared events
+  but cannot interpret results, mutate code, or change task semantics. Fully
+  authorized mechanical transitions remain the responsibility of a separately
+  reviewed deterministic supervisor.
+- `manage-paper-experiments` now explicitly composes this generic relay with
+  experiment-specific W&B, queue, and GPU lifecycle contracts.
+- Validation passed: 14 unit tests, repository validator, skill quick validator,
+  Codex plugin validator, Python compilation, CLI help smoke, and `git diff --check`.
