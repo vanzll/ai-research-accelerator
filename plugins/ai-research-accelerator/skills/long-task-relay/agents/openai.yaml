@@ -1,0 +1,4 @@
+interface:
+  display_name: "Long-Task Relay"
+  short_description: "Monitor long tasks without continuous agent polling"
+  default_prompt: "Use $long-task-relay to monitor this long-running task with a rule-based watcher and wake this exact conversation only when a milestone, failure, stall, or completion requires attention."

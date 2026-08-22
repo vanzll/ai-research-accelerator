@@ -128,7 +128,10 @@ Choose one orchestration mode before launch:
   judgment, a mechanical watcher observes logs/progress and wakes the exact
   Codex thread only on a milestone, stale heartbeat, process exit, or fatal
   signal. The watcher never analyzes results or changes the queue. Codex handles
-  one event, updates state, re-arms the watcher, and exits.
+  one event, updates state, re-arms the watcher, and exits. Use the bundled
+  `long-task-relay` skill and its standard-library CLI instead of creating a
+  project-specific polling loop. Experiment-specific supervisors may add W&B
+  and GPU lifecycle checks around this generic relay contract.
 
 Never emulate either mode with a Codex loop that sleeps and polls.
 
