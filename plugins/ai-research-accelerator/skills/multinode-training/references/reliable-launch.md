@@ -122,14 +122,22 @@ Treat NCCL transport as part of the frozen run contract, not ambient shell
 state. Before loading a large model across nodes:
 
 1. inspect the actual active interfaces and RDMA HCAs on every host;
-2. explicitly override inherited `NCCL_IB_DISABLE`, `NCCL_SOCKET_IFNAME`, and
-   related site-sensitive variables instead of preserving arbitrary parent
-   values with shell defaults;
+2. unset transport-changing variables such as `NCCL_NET`, `NCCL_NET_PLUGIN`,
+   HCA/GID selectors, and cross-NIC controls before explicitly setting the
+   frozen `NCCL_IB_DISABLE` and `NCCL_SOCKET_IFNAME` contract; never preserve
+   arbitrary parent values with shell defaults;
 3. run a small multi-node collective using the exact host/rank/GPU topology;
 4. capture bounded `NCCL_DEBUG=INFO`/`NCCL_DEBUG_SUBSYS=NET` evidence and verify
-   that the intended IB/RDMA or socket transport was selected;
+   the final transport selection (for example, `Using network IB`), not merely
+   device discovery; reject a later `Using network Socket` when RDMA is
+   required;
 5. enforce a generous but meaningful bandwidth/latency floor and record the
    result in an attempt-scoped marker.
+
+Report payload or algorithmic bandwidth separately from NCCL bus bandwidth;
+their conversion depends on collective and world size. Run the probe in an
+owned process group so cancellation, timeout, or peer failure cannot leave
+workers holding GPUs or rendezvous ports.
 
 Never copy an interface name from another backend or cluster without checking
 that it exists on every target host. If the probe falls back to TCP when RDMA
