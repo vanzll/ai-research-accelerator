@@ -22,10 +22,11 @@ Several failures were avoidable engineering defects rather than intrinsic distri
 - Python object collectives and interleaved stdout were used as diagnostic data paths;
 - runtime stdout was not durable from process start;
 - a projected W&B step-zero query returned an empty result and killed healthy training;
+- a later formal run wrote its local startup marker before a 31-prompt step-zero evaluation, but did not commit a lightweight W&B history row first. A 600-second cloud gate expired during the healthy evaluation and killed the job; the resulting run later appeared as crashed with zero history rows;
 - node failure cleanup lacked a nonce-bound peer watchdog;
 - one mutable liveness file was overwritten during normal rank teardown, erasing proof that all ranks had completed the target step.
 
-Prevent these with one canonical validator, tensor-based probes, rank-local atomic logs, a real tracker API contract test, nonce/PID/PGID-scoped cleanup, and immutable per-step completion markers.
+Prevent these with one canonical validator, tensor-based probes, rank-local atomic logs, a real tracker API contract test, an immediate lightweight startup row before full evaluation, nonce/PID/PGID-scoped cleanup, and immutable per-step completion markers.
 
 ## Evidence reuse
 

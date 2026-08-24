@@ -70,6 +70,7 @@ Do not insert a new smoke between an already successful exact-topology smoke and
 - Record both the logical parallel mesh and its physical placement. Full-world FSDP can turn a transport mistake into per-layer cross-node stalls; compare it with node-local sharding plus cross-node replication only after transport correctness is established.
 - Do not trade throughput for serialized algorithm equivalence unless the user explicitly asks to reproduce a larger logical batch or topology with fewer resources. Otherwise preserve the fastest correct parallel execution supported by the frozen protocol.
 - Persist rank-prefixed runtime output from the first process launch. Use tensor collectives for transport measurements and structured per-rank records for diagnostics; do not use Python object collectives or interleaved multi-rank stdout as a bandwidth oracle.
+- Decouple tracker startup from expensive evaluation. Immediately after tracker initialization, log a lightweight identity/telemetry row and persist its local commit evidence before starting step-zero evaluation. An evaluation-duration timeout or delayed cloud history must not be interpreted as training failure.
 
 ## Asset preparation contract
 

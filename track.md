@@ -101,3 +101,9 @@
   and its safe generalization boundary.
 - Raised the plugin version to `0.3.1`; an independent clean-context review
   found no blockers and its four ambiguity findings were resolved before sync.
+- A subsequent formal A25 failure exposed a distinct telemetry/evaluation race:
+  the local W&B marker existed before a 31-prompt step-zero evaluation, but no
+  lightweight history row had been committed. A 600-second cloud gate killed
+  healthy evaluation. The skill now requires an immediate startup row before
+  expensive eval and separates tracker degradation from training failure.
+- Raised the plugin version to `0.3.2` for this correction.

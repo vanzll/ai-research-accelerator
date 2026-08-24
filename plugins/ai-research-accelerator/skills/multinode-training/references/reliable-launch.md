@@ -162,12 +162,17 @@ Write immutable per-node completion records at the optimizer boundary, then deri
 
 Test the exact tracker API query against a real minimal run before making it a kill condition. Projected history queries can omit a valid step zero depending on API behavior; a false-negative telemetry probe must not terminate otherwise healthy training. After a bounded visibility wait, record an `OBSERVABILITY_DEGRADED` state and preserve training unless the frozen experiment contract explicitly requires fail-closed telemetry.
 
-Tracker startup and training health are separate states. Initialize telemetry
-and publish the exact run identity before an expensive step-zero evaluation,
-but do not call the smoke healthy until a real optimizer step is finite. A
-smoke evaluation should use the smallest fixed prompt subset that exercises
-the same path; it must not run a full paper evaluation suite before validating
-basic throughput. Add a phase-specific throughput deadline so a job that is alive but hundreds of times slower cannot occupy a cluster for days. Once an exact-topology smoke has already established this evidence, a formal launcher should start directly and perform only the early handshake; it should not run another smoke or promotion stage.
+Tracker startup, evaluation, and training health are separate states. Use this telemetry sequence:
+
+1. initialize the exact tracker run identity;
+2. immediately log and flush a lightweight startup row containing experiment ID, nonce, commit, topology, and a telemetry-started flag;
+3. persist local `STARTUP_ROW_COMMITTED` evidence with the tracker run ID;
+4. verify cloud visibility asynchronously;
+5. only then begin an expensive step-zero evaluation when practical. Cloud verification may continue in parallel and must not sit on the critical path of model evaluation or training.
+
+Do not treat a locally written startup marker as proof that cloud history exists, and do not wait for a full evaluation to create the first history row. A fixed tracker timeout must never kill a healthy job merely because a formal evaluation has many prompts. If visibility remains unavailable, record `OBSERVABILITY_DEGRADED`, retain local logs and tracker identity, and follow the experiment's explicit telemetry policy.
+
+Do not call a smoke healthy until a real optimizer step is finite. A smoke evaluation should use the smallest fixed prompt subset that exercises the same path; it must not run a full paper evaluation suite before validating basic throughput. Add a phase-specific throughput deadline so a job that is alive but hundreds of times slower cannot occupy a cluster for days. Once an exact-topology smoke has already established this evidence, a formal launcher should start directly and perform only the early handshake; it should not run another smoke or promotion stage.
 
 ## Resource and cleanup hooks
 

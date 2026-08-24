@@ -39,6 +39,12 @@ Checks:
   process group during model construction even when the service was intended
   to be local and single-process.
 
+## Tracker startup versus step-zero evaluation
+
+If a run identity exists locally but cloud history is empty, reconstruct the order of events: tracker initialization, lightweight startup-row log and flush, full evaluation, first optimizer step, and termination. A formal step-zero evaluation can be much longer than a smoke evaluation. A cloud-visibility deadline that starts before the first lightweight history row is committed measures evaluation duration, not tracker health.
+
+Do not repair this by merely extending one hard timeout. Emit the startup row before evaluation, validate the tracker query against a real row, and keep tracker degradation separate from training liveness.
+
 ## Stage 3: rendezvous
 
 Symptoms:
