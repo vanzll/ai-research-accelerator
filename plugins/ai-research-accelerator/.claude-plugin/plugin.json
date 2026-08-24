@@ -1,8 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "ai-research-accelerator",
-  "version": "0.2.0",
-  "description": "An author-first workflow for accelerating research from experiment planning and analysis through top-conference publication.",
+  "version": "0.3.0",
+  "description": "An author-first workflow for accelerating research from reliable distributed training through top-conference publication.",
   "author": {
     "name": "vanzll",
     "url": "https://github.com/vanzll"
@@ -15,6 +15,7 @@
     "paper-review",
     "experiments",
     "automation",
+    "distributed-training",
     "long-running-tasks",
     "visualization"
   ],

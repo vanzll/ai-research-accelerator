@@ -16,6 +16,7 @@ REQUIRED_SKILLS = {
     "github-paper-review-workflow",
     "long-task-relay",
     "manage-paper-experiments",
+    "multinode-training",
     "plot-paper-experiments",
     "write-insightful-topconf-paper",
 }

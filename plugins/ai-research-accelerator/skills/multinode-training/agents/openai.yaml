@@ -1,0 +1,4 @@
+interface:
+  display_name: "Multinode Training"
+  short_description: "Design, launch, and debug reliable multi-node GPU training."
+  default_prompt: "Design or audit this multi-node GPU training workflow end to end."
