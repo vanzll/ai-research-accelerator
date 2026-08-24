@@ -48,6 +48,34 @@ Gradient accumulation preserves a larger effective batch only when:
 
 For on-policy RL, accumulating optimizer gradients across separately generated policy versions is usually not equivalent. Freeze the rollout policy and estimator inputs for the complete accumulated update if equivalence is claimed.
 
+## Serialize a larger logical batch only when explicitly requested
+
+Fewer GPUs can reproduce a larger parallel logical batch by spending more wall time, but this is an opt-in execution mode. Use it only when the user explicitly asks to trade speed for algorithmic equivalence or requests a target logical batch/topology that cannot run concurrently. Otherwise keep the fastest correct parallel schedule; do not silently serialize work because resources are scarce.
+
+First freeze the target contract, for example `P16/K4 = 64 videos per optimizer update`. Then partition that logical batch into serial waves. A single wave's physical microbatch is an execution detail; the estimator and optimizer must still observe the complete logical batch.
+
+Two implementations are possible:
+
+1. **Materialize then train:** generate all waves from one frozen policy snapshot, retain trajectories and old-policy statistics on CPU or storage, then train over update microbatches.
+2. **Stream and accumulate:** generate one or more complete estimator groups, backpropagate their correctly scaled losses, discard trajectories, and continue without changing parameters until the logical batch is complete.
+
+Streaming is equivalent only if pending gradients do not affect forward behavior and every invariant below holds:
+
+- policy parameters, rollout policy, reference model, reward model, and estimator definition stay fixed across all waves;
+- no optimizer, scheduler, EMA, KL-controller, moving-anchor, scaler-growth, or checkpoint step advances between waves;
+- each K-sample prompt/state group is complete before its reward, advantage, covariance, or other group statistic is computed;
+- old log probabilities, latent trajectories, timesteps, masks, and conditioning remain paired with the exact rollout that produced them;
+- independent samples use the intended RNG semantics; accidental seed reuse must not collapse group diversity;
+- each microbatch loss is weighted so the accumulated gradient equals the mean over the full logical population, including uneven final microbatches;
+- gradient clipping, optimizer stepping, scheduler stepping, and zeroing occur once at the declared optimizer boundary;
+- cross-wave metrics are reduced with sample-count weighting, and W&B distinguishes rollout wave, generated samples, and optimizer step;
+- any batch-dependent stochastic layer or normalization that would differ under serialization is disabled, frozen, or acknowledged as breaking exact equivalence;
+- the smoke executes every serial wave and one real optimizer step. A one-wave smoke cannot validate this mode.
+
+Increasing microbatch size uses more memory and may improve throughput; increasing the number of accumulated microbatches increases the logical batch. Do not conflate these controls.
+
+Before launch, report both the equivalence claim and its cost. Include generated samples, rollout waves, optimizer steps, wall time, and GPU-hours in comparisons. Serialization may preserve the estimator while substantially changing throughput; optimizer-step curves alone can conceal that cost.
+
 ## Rank and collective semantics
 
 - `LOCAL_RANK` selects the local device.

@@ -44,16 +44,34 @@ Include relevant asset-manifest hash, config hash, service endpoint, process-gro
 
 ## Asset protocol
 
+### Discover and import before download
+
+Asset preparation starts with bounded discovery, not network access. Check the asset roots declared by the run contract, prior verified manifests, project checkpoint directories, and explicitly configured shared caches. Do not scan an entire shared filesystem without a bounded path and timeout.
+
+A missing canonical manifest means the candidate is unverified; it does not mean the model is absent. For every candidate:
+
+1. identify the exact files the loader will consume, including weight indexes and all referenced shards;
+2. verify model identity and immutable revision where metadata permits;
+3. verify required files, sizes, and checksums against an authoritative index or pinned manifest;
+4. reject mixed revisions, incomplete snapshots, dangling links, and paths that would trigger a fallback network lookup;
+5. if valid, atomically import it into the canonical layout using hard links or read-only symlinks when safe, then generate the new manifest;
+6. download only the files that remain absent or invalid.
+
+Record whether each asset was reused, imported, repaired, or downloaded. A launcher that redownloads an already verified multi-gigabyte model because it lives under a different cache layout is defective: it wastes time, bandwidth, and storage and adds a new failure path without improving reproducibility.
+
+Never equate one cache implementation with model identity. A project-local checkpoint tree and a Hugging Face snapshot can contain the same immutable files. Reproducibility comes from verifying content and revision, not from forcing every valid asset through one cache directory.
+
 ### Shared filesystem
 
 1. The coordinator takes a single-writer lock with bounded acquisition time.
-2. It downloads to a temporary directory that is not a valid model path.
-3. It pins an immutable revision and validates required files, sizes, and checksums when available.
-4. It publishes the final directory or manifest atomically.
-5. It writes `ASSETS_READY` last.
-6. Workers verify the same manifest and then load only from explicit paths.
+2. It performs the discovery-and-import protocol above.
+3. If network transfer is still required, it downloads to a temporary directory that is not a valid model path.
+4. It pins an immutable revision and validates required files, sizes, and checksums when available.
+5. It publishes the final directory or manifest atomically.
+6. It writes `ASSETS_READY` last.
+7. Workers verify the same manifest and then load only from explicit paths.
 
-For Hugging Face assets, a blob may exist while the snapshot is incomplete. Verify the actual directory passed to `from_pretrained`. Once prepared, set offline mode before Python imports and pass `local_files_only=True`. Formal training must fail immediately if an asset is missing instead of entering a network/cache lock path.
+For Hugging Face assets, a blob may exist while the snapshot is incomplete, but the inverse mistake is also dangerous: a complete model in a project checkpoint directory must not be treated as absent merely because no Hugging Face snapshot pointer or new manifest exists. Verify the actual directory passed to `from_pretrained`. Once prepared, set offline mode before Python imports and pass `local_files_only=True`. Formal training must fail immediately if an asset is missing instead of entering a network/cache lock path.
 
 If Xet or HTTP/2 is incompatible with a site proxy, only the coordinator may switch to a bounded, resumable HTTP/1.1 or Range-download path. Verify the final size and checksum before publication. This is a transport fallback, not permission for workers to download concurrently.
 
@@ -112,6 +130,8 @@ Treat cluster-specific resource leases such as GPU reservation commands as confi
 ## Retry policy
 
 Preserve logs, state records, and failed markers. Diagnose and repair the cause before retrying. Use a new attempt number and launch nonce; never make a failed lineage appear successful by deleting evidence. Reuse immutable assets only after they pass the repaired validation contract.
+
+When the failure is an asset-layout mismatch, repair discovery/import logic before retrying. Do not solve it by creating another cache root and downloading the same revision again.
 
 ## Remote-agent prompt contract
 

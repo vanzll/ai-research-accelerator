@@ -59,20 +59,30 @@ For exact marker contents, asset rules, process-group cleanup, and remote prompt
 - A process existing is not readiness. Check the actual port or API and require a fresh heartbeat tied to the current nonce.
 - On any node failure, terminate the whole worker group unless the framework's elastic recovery semantics were deliberately designed and tested.
 - Preserve failed attempt evidence. Retry with a new attempt and nonce after repairing the cause; do not overwrite ambiguous lineage.
+- Treat a missing manifest as "not yet verified," not "asset missing." Before any download, discover declared existing asset roots, validate compatible files against the pinned revision/index/checksums, and import or link them into the immutable layout. Download only files that are absent or invalid.
+- Do not trade throughput for serialized algorithm equivalence unless the user explicitly asks to reproduce a larger logical batch or topology with fewer resources. Otherwise preserve the fastest correct parallel execution supported by the frozen protocol.
 
 ## Asset preparation contract
 
 On shared storage, a coordinator process on the master host should run before the trainer process group exists. It should:
 
 1. acquire a single-writer lock;
-2. download into an attempt-scoped temporary directory;
-3. verify revision, required files, sizes, and checksums where available;
-4. atomically publish the immutable asset directory or manifest;
-5. write a nonce-bound ready record last.
+2. inspect declared existing model roots and compatible caches before downloading;
+3. verify any existing candidate against the pinned revision, index, required files, sizes, and checksums;
+4. import, hard-link, or symlink a verified candidate into the canonical immutable layout when safe;
+5. download only missing or invalid files into an attempt-scoped temporary directory;
+6. atomically publish the immutable asset directory or manifest;
+7. write a nonce-bound ready record last.
 
 Workers must only wait, then independently verify the published files. During training, use explicit local paths and offline or `local_files_only` loading. The presence of Hugging Face `blobs/` does not prove a usable `snapshots/` tree.
 
 If storage is not shared, stage the same verified manifest to every node before the cluster-ready barrier. Do not pretend a rank-0 download is visible remotely.
+
+## Low-resource equivalence is opt-in
+
+When the user explicitly requests algorithm-equivalent execution with fewer GPUs, a larger parallel logical batch may be serialized into rollout or microbatch waves while the policy and optimizer boundary remain frozen. State the equivalence target, additional wall time, and residual numerical differences before implementing it. Follow the exact invariants in [topology-and-semantics.md](references/topology-and-semantics.md).
+
+Do not enable this mode merely because GPUs are scarce. Without explicit user authorization, do not silently replace parallel execution with a slower serialized schedule.
 
 ## Validation ladder
 
