@@ -91,6 +91,13 @@ Reward models, data servers, and evaluators often run once per node. For each se
 - refresh a heartbeat or expose a health endpoint;
 - clean up only processes owned by the current attempt.
 
+Treat the service process as a hard environment boundary. Remove training-only
+rendezvous variables such as `RANK`, `WORLD_SIZE`, `LOCAL_RANK`,
+`LOCAL_WORLD_SIZE`, `GROUP_RANK`, `ROLE_RANK`, `MASTER_ADDR`, and
+`MASTER_PORT` before importing frameworks that may auto-initialize distributed
+state. Do this only for the service child. The trainer must retain its frozen
+rendezvous environment.
+
 Port listening alone is insufficient if the service can accept TCP before model loading finishes. A process alone is insufficient if it is blocked on a model cache lock.
 
 ## Rendezvous and launch
@@ -101,6 +108,34 @@ Port listening alone is insufficient if the service can accept TCP before model 
 - Launch all nodes within a bounded window. A durable launcher or scheduler should do this; a conversational agent should not manually race commands.
 - Start workers in their own process groups. Cleanup must terminate the complete owned group, including children left after a launcher exits.
 - Propagate exceptions and signals into a cluster-wide failure record. Do not leave peers blocked in a collective.
+
+Process-group ownership needs a handshake. `setsid command &` followed by one
+immediate `ps` is racy: `setsid` may fork, or the parent may inspect the child
+before session creation. Use a non-forking child wrapper that publishes its
+PID/PGID after setup, or poll the intended invariant with a short bounded
+timeout while also checking child liveness. Do not release GPUs or report
+readiness until ownership is established.
+
+## Transport preflight
+
+Treat NCCL transport as part of the frozen run contract, not ambient shell
+state. Before loading a large model across nodes:
+
+1. inspect the actual active interfaces and RDMA HCAs on every host;
+2. explicitly override inherited `NCCL_IB_DISABLE`, `NCCL_SOCKET_IFNAME`, and
+   related site-sensitive variables instead of preserving arbitrary parent
+   values with shell defaults;
+3. run a small multi-node collective using the exact host/rank/GPU topology;
+4. capture bounded `NCCL_DEBUG=INFO`/`NCCL_DEBUG_SUBSYS=NET` evidence and verify
+   that the intended IB/RDMA or socket transport was selected;
+5. enforce a generous but meaningful bandwidth/latency floor and record the
+   result in an attempt-scoped marker.
+
+Never copy an interface name from another backend or cluster without checking
+that it exists on every target host. If the probe falls back to TCP when RDMA
+is required, fail before model loading. After transport is correct, profile the
+parallel mesh separately; do not conflate a transport failure with an FSDP
+topology decision.
 
 Use a static rendezvous for a fixed research run unless elastic membership and checkpoint-resume semantics have been explicitly designed and tested.
 
@@ -117,6 +152,14 @@ Do not wait until job completion to discover a partial launch. While all workers
 - a distributed checkpoint smoke succeeds when formal training will save checkpoints.
 
 Write `FIRST_WORK_VALIDATED` only after these checks. A remote coding agent may end its turn after a deterministic supervisor owns the job and this evidence is either produced or will mechanically fail within a bounded deadline.
+
+Tracker startup and training health are separate states. Initialize telemetry
+and publish the exact run identity before an expensive step-zero evaluation,
+but do not call the smoke healthy until a real optimizer step is finite. A
+smoke evaluation should use the smallest fixed prompt subset that exercises
+the same path; it must not run a full paper evaluation suite before validating
+basic throughput. Add a phase-specific throughput deadline so a job that is
+alive but hundreds of times slower cannot occupy a cluster for days.
 
 ## Resource and cleanup hooks
 

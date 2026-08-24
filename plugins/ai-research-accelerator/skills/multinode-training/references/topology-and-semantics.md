@@ -24,6 +24,23 @@ global_batch = dp * local_batch_per_dp_replica * gradient_accumulation
 
 Adjust the expression when pipeline schedules, packed sequences, or framework-specific accumulation change the semantics. Verify it from runtime metrics rather than trusting configuration names.
 
+Also record where each mesh dimension lives physically. For FSDP/HSDP, state
+the shard degree, replicate degree, ranks in each shard group, and whether a
+group crosses node boundaries. For example, on two eight-GPU nodes:
+
+```text
+full-world FSDP: shard_degree=16, replicate_degree=1
+node-local HSDP: shard_degree=8, replicate_degree=2
+```
+
+These can preserve the same global gradient semantics while having very
+different communication schedules. Full-world sharding materializes parameter
+shards across nodes at many layer boundaries; HSDP keeps shard collectives
+within a node and synchronizes replicated shard groups across nodes. Do not
+choose between them from GPU count alone. First verify the interconnect, then
+benchmark the exact model topology and account for memory, optimizer state,
+gradient reduction, and framework mesh semantics.
+
 ## Preserve estimator groups
 
 RL and preference estimators often require K samples from one prompt or state. Define:

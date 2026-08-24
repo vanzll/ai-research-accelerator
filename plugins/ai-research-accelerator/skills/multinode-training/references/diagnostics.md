@@ -34,6 +34,10 @@ Checks:
 - process group, child process, log freshness, port owner, health response, GPU memory, and heartbeat;
 - node-local endpoint configuration on every trainer rank;
 - request and response counts, latency, timeout, and error rate.
+- inspect the service child's environment for leaked training rendezvous
+  variables; libraries such as Accelerate or Transformers may initialize a
+  process group during model construction even when the service was intended
+  to be local and single-process.
 
 ## Stage 3: rendezvous
 
@@ -66,6 +70,13 @@ Checks:
 
 Use `NCCL_DEBUG=INFO` and `TORCH_DISTRIBUTED_DEBUG=DETAIL` for a bounded reproduction. NCCL auto-selects interfaces; set `NCCL_SOCKET_IFNAME` only after identifying the correct cross-node interface. Persistent debug logging can be expensive and should not silently remain in formal runs.
 
+Before blaming model code, compare the selected NCCL transport with the frozen
+contract. Look for `NET/IB` versus `NET/Socket`, inherited
+`NCCL_IB_DISABLE=1`, nonexistent interface names, active RDMA devices that NCCL
+never opens, and asymmetric interface availability across hosts. Run a bounded
+collective benchmark outside the model. It should fail before training if the
+required transport is absent or implausibly slow.
+
 ## Stage 5: correctness mismatch
 
 Symptoms:
@@ -95,6 +106,18 @@ For performance, measure:
 - data and asset I/O wait;
 - GPU utilization and memory by phase;
 - straggler rank and node.
+
+`nvidia-smi` utilization can be misleading during communication waits. A GPU
+may report 100% utilization while power draw and memory-controller activity are
+near idle because NCCL/CUDA wait kernels remain resident. Compare step latency,
+power, memory-controller utilization, transport logs, and a known single-node
+baseline. Repeated slow steps rule out one-time compilation warmup.
+
+If single-node FSDP is fast but the same configuration collapses after adding a
+node, inspect both layers in order: first transport correctness, then shard
+geography. Full-world sharding can amplify a TCP fallback because parameter
+all-gathers cross nodes at every layer; node-local HSDP may reduce that traffic,
+but it is not a substitute for repairing RDMA.
 
 Optimize only after correctness. Prefer increasing useful local work or overlap before adding nodes when inter-node communication dominates.
 

@@ -40,11 +40,12 @@ Advance through these stages in order, with bounded waits and durable evidence:
 
 1. **Preflight:** verify host identity, code commit, environment, free ports, storage, GPU inventory, and absence of unowned conflicting processes.
 2. **Prepare immutable assets:** one coordinator writes; workers wait and verify. Never let all ranks mutate a shared model cache.
-3. **Start node-local dependencies:** each node starts only its own reward/data services and proves both process liveness and application readiness.
+3. **Start node-local dependencies:** each node starts only its own reward/data services with the training rendezvous environment removed, then proves both process liveness and application readiness.
 4. **Cluster-ready barrier:** require a nonce-bound ready record from every expected node. A rank-0 heartbeat alone is insufficient.
-5. **Distributed launch:** start the same frozen command on every node with unique node rank and identical rendezvous values.
-6. **First-work validation:** require all ranks to join, one complete global batch or rollout, one optimizer step, globally reduced metrics, and any declared tracker run while workers are still alive.
-7. **Durable handoff:** once validated, a deterministic supervisor owns monitoring, cleanup, and authorized transitions. Do not keep an agent polling.
+5. **Transport probe:** before loading the formal model, run a bounded collective with the exact nodes, GPUs, interfaces, and NCCL environment; verify the intended transport and a plausible bandwidth/latency floor.
+6. **Distributed launch:** start the same frozen command on every node with unique node rank and identical rendezvous values.
+7. **First-work validation:** require all ranks to join, one complete global batch or rollout, one optimizer step, globally reduced metrics, and any declared tracker run while workers are still alive.
+8. **Durable handoff:** once validated, a deterministic supervisor owns monitoring, cleanup, and authorized transitions. Do not keep an agent polling.
 
 For exact marker contents, asset rules, process-group cleanup, and remote prompt requirements, follow [reliable-launch.md](references/reliable-launch.md).
 
@@ -57,9 +58,13 @@ For exact marker contents, asset rules, process-group cleanup, and remote prompt
 - Distinguish model-sharding ranks from independent data replicas when computing global batch and sample count.
 - A checkpoint is complete only after every required rank finishes its collective portion and a final success manifest is written last.
 - A process existing is not readiness. Check the actual port or API and require a fresh heartbeat tied to the current nonce.
+- A node-local service must not inherit `RANK`, `WORLD_SIZE`, `LOCAL_RANK`, `MASTER_ADDR`, `MASTER_PORT`, or equivalent training rendezvous state unless it is deliberately part of that worker group. Sanitize these variables at the service process boundary, not globally.
+- Do not preserve inherited NCCL transport variables through `${VAR:-default}` in a frozen launcher. Resolve the intended interface and transport explicitly from the target hosts, then verify them with a collective probe. High GPU utilization alone does not prove useful compute.
+- Establish an owned worker process group through a child handshake or bounded polling. Never make cleanup correctness depend on one immediate PID/PGID observation after `setsid` or a background fork.
 - On any node failure, terminate the whole worker group unless the framework's elastic recovery semantics were deliberately designed and tested.
 - Preserve failed attempt evidence. Retry with a new attempt and nonce after repairing the cause; do not overwrite ambiguous lineage.
 - Treat a missing manifest as "not yet verified," not "asset missing." Before any download, discover declared existing asset roots, validate compatible files against the pinned revision/index/checksums, and import or link them into the immutable layout. Download only files that are absent or invalid.
+- Record both the logical parallel mesh and its physical placement. Full-world FSDP can turn a transport mistake into per-layer cross-node stalls; compare it with node-local sharding plus cross-node replication only after transport correctness is established.
 - Do not trade throughput for serialized algorithm equivalence unless the user explicitly asks to reproduce a larger logical batch or topology with fewer resources. Otherwise preserve the fastest correct parallel execution supported by the frozen protocol.
 
 ## Asset preparation contract
