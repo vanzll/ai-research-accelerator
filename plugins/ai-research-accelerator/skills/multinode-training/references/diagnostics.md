@@ -77,6 +77,10 @@ never opens, and asymmetric interface availability across hosts. Run a bounded
 collective benchmark outside the model. It should fail before training if the
 required transport is absent or implausibly slow.
 
+If RDMA is selected but identical probes alternate between fast and extremely slow paths, identify the loaded `libnccl.so`, not just the reported version. Vendor NCCL/KCCL builds can share an ABI/version with the wheel-bundled NCCL while implementing different multi-rail policy. Verify the resolved library path and checksum before changing HCA lists, QP counts, GID indices, traffic classes, or topology.
+
+Use tensor collectives and one atomic result record per rank or pair for bandwidth diagnosis. Python object collectives add serialization and are not a bandwidth oracle; concurrent multi-rank stdout can interleave and corrupt parsers even when the collective itself is healthy.
+
 ## Stage 5: correctness mismatch
 
 Symptoms:
@@ -93,6 +97,7 @@ Checks:
 - inspect semantic K-group placement and normalization population;
 - reduce weighted numerators and denominators, not unweighted rank means;
 - verify scheduler, EMA, clipping, and optimizer advance once per intended update.
+- test backend adapter APIs with the exact runtime argument shapes. In generative pipelines, a list of per-sample RNG generators may require one draw per sample rather than being forwarded to an API that accepts only one generator.
 
 ## Stage 6: OOM or throughput regression
 
@@ -134,3 +139,5 @@ A useful report states:
 - the contract change required before a new attempt.
 
 Do not describe a timeout as the root cause when the actual cause is an incomplete asset, missing node, asymmetric collective, or dead service.
+
+Also distinguish training failure from control-plane failure. A healthy run can be falsely rejected by a broken attempt parser, duplicated validator, tracker query, log parser, or liveness race. Before changing model code, reconstruct the timeline from immutable optimizer-step records, rank-local logs, terminal statuses, and tracker history.

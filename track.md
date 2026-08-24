@@ -79,3 +79,25 @@
 - Validation passed for all 14 repository tests, the repository validator, the
   Codex skill and plugin validators, Claude plugin validation, JSON parsing,
   `git diff --check`, and live resolution of all 13 official reference URLs.
+
+## 2026-08-25 - Refine multi-node assurance from HY1.5/KCCL failures
+
+- Reclassified the launch ladder as proportionate assurance rather than a
+  mandatory smoke/probe pipeline for every formal run. Exact-topology evidence
+  may be reused when hosts, code, assets, topology, communication environment,
+  and loaded library identity match.
+- Added the loaded NCCL/KCCL binary path and checksum to the communication
+  contract. The HY1.5 incident showed that wheel NCCL and xray KCCL reported the
+  same ABI/version but differed by orders of magnitude on intermittent RoCE
+  paths; repeated pair-matrix validation was required to establish the fix.
+- Added control-plane lessons from A20--A25: canonical multi-digit attempt
+  parsing, no duplicated validators, tensor-based transport probes, durable
+  rank-local logs, tested W&B step-zero queries, nonce-scoped peer cleanup, and
+  immutable optimizer-step evidence that cannot be erased during rank teardown.
+- Clarified that after a matching smoke succeeds, formal training should launch
+  directly with an early first-work handshake. Extra smoke/promotion machinery
+  is justified only when it tests a changed contract.
+- Added `references/hy15-kccl-case-study.md` with the cluster-specific evidence
+  and its safe generalization boundary.
+- Raised the plugin version to `0.3.1`; an independent clean-context review
+  found no blockers and its four ambiguity findings were resolved before sync.

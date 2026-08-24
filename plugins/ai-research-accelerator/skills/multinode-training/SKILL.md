@@ -19,6 +19,7 @@ A successful `torchrun` command is not proof that all three contracts are correc
 - Read [reliable-launch.md](references/reliable-launch.md) before writing a launcher, supervisor, remote-agent prompt, asset preparation flow, or recovery policy.
 - Read [diagnostics.md](references/diagnostics.md) when a job hangs, one node diverges, throughput regresses, metrics disagree, or startup does not reach training.
 - Read [source-notes.md](references/source-notes.md) when refreshing the skill or checking which rules come from PyTorch, Accelerate, DeepSpeed, Megatron-LM, Hugging Face Hub, or NCCL.
+- Read [hy15-kccl-case-study.md](references/hy15-kccl-case-study.md) when a vendor cluster has a custom NCCL/KCCL stack, transport performance is intermittent, or strict startup controls themselves are failing.
 
 ## Establish a frozen run contract
 
@@ -34,20 +35,20 @@ Before editing code or allocating GPUs, write down and mechanically validate:
 
 Fail closed when a required value is implicit, inconsistent, or node-specific without being declared. Do not silently choose a different batch size, model path, network interface, precision, or microbatch after launch.
 
-## Use a staged launch
+## Use proportionate launch assurance
 
-Advance through these stages in order, with bounded waits and durable evidence:
+The stages below describe separate failure domains, not mandatory work for every launch. Run only the smallest set not already covered by fresh, matching evidence:
 
 1. **Preflight:** verify host identity, code commit, environment, free ports, storage, GPU inventory, and absence of unowned conflicting processes.
 2. **Prepare immutable assets:** one coordinator writes; workers wait and verify. Never let all ranks mutate a shared model cache.
 3. **Start node-local dependencies:** each node starts only its own reward/data services with the training rendezvous environment removed, then proves both process liveness and application readiness.
 4. **Cluster-ready barrier:** require a nonce-bound ready record from every expected node. A rank-0 heartbeat alone is insufficient.
-5. **Transport probe:** before loading the formal model, run a bounded collective with the exact nodes, GPUs, interfaces, and NCCL environment; verify the intended transport and a plausible bandwidth/latency floor.
+5. **Transport validation:** if the hosts, topology, network stack, or loaded communication library are new or changed, run a bounded collective with the exact topology. Otherwise verify and reuse a frozen report from repeated successful probes with matching identities.
 6. **Distributed launch:** start the same frozen command on every node with unique node rank and identical rendezvous values.
-7. **First-work validation:** require all ranks to join, one complete global batch or rollout, one optimizer step, globally reduced metrics, and any declared tracker run while workers are still alive.
+7. **First-work validation:** persist immutable local evidence when all ranks complete one global batch or rollout and optimizer step; verify finite global metrics and tracker visibility independently.
 8. **Durable handoff:** once validated, a deterministic supervisor owns monitoring, cleanup, and authorized transitions. Do not keep an agent polling.
 
-For exact marker contents, asset rules, process-group cleanup, and remote prompt requirements, follow [reliable-launch.md](references/reliable-launch.md).
+Do not insert a new smoke between an already successful exact-topology smoke and a formal run unless code, assets, topology, communication stack, or algorithm semantics changed. A direct formal launch with an early first-work handshake is appropriate when matching evidence already exists. For exact marker contents, evidence reuse, asset rules, process-group cleanup, and remote prompt requirements, follow [reliable-launch.md](references/reliable-launch.md).
 
 ## Non-negotiable correctness rules
 
@@ -59,13 +60,16 @@ For exact marker contents, asset rules, process-group cleanup, and remote prompt
 - A checkpoint is complete only after every required rank finishes its collective portion and a final success manifest is written last.
 - A process existing is not readiness. Check the actual port or API and require a fresh heartbeat tied to the current nonce.
 - A node-local service must not inherit `RANK`, `WORLD_SIZE`, `LOCAL_RANK`, `MASTER_ADDR`, `MASTER_PORT`, or equivalent training rendezvous state unless it is deliberately part of that worker group. Sanitize these variables at the service process boundary, not globally.
-- Do not preserve inherited NCCL transport variables through `${VAR:-default}` in a frozen launcher. Resolve the intended interface and transport explicitly from the target hosts, then verify them with a collective probe. High GPU utilization alone does not prove useful compute.
+- Do not preserve undeclared inherited NCCL transport variables through `${VAR:-default}` in a frozen launcher. Resolve the complete platform-approved transport contract explicitly, then verify it with a fresh probe or a matching frozen report. High GPU utilization alone does not prove useful compute.
+- Treat the loaded communication binary as part of the contract. Two libraries may report the same NCCL ABI/version while selecting radically different vendor transports. On clusters with a site NCCL/KCCL build, verify the resolved `libnccl.so` path, preload the pinned vendor library when required, and record its checksum; HCA/QP/GID tuning cannot repair the wrong implementation.
 - Establish an owned worker process group through a child handshake or bounded polling. Never make cleanup correctness depend on one immediate PID/PGID observation after `setsid` or a background fork.
 - On any node failure, terminate the whole worker group unless the framework's elastic recovery semantics were deliberately designed and tested.
 - Preserve failed attempt evidence. Retry with a new attempt and nonce after repairing the cause; do not overwrite ambiguous lineage.
+- Implement experiment-ID parsing, contract validation, and identity derivation once and test multi-digit attempts. Duplicated outer/inner validators create contradictory control planes.
 - Treat a missing manifest as "not yet verified," not "asset missing." Before any download, discover declared existing asset roots, validate compatible files against the pinned revision/index/checksums, and import or link them into the immutable layout. Download only files that are absent or invalid.
 - Record both the logical parallel mesh and its physical placement. Full-world FSDP can turn a transport mistake into per-layer cross-node stalls; compare it with node-local sharding plus cross-node replication only after transport correctness is established.
 - Do not trade throughput for serialized algorithm equivalence unless the user explicitly asks to reproduce a larger logical batch or topology with fewer resources. Otherwise preserve the fastest correct parallel execution supported by the frozen protocol.
+- Persist rank-prefixed runtime output from the first process launch. Use tensor collectives for transport measurements and structured per-rank records for diagnostics; do not use Python object collectives or interleaved multi-rank stdout as a bandwidth oracle.
 
 ## Asset preparation contract
 
@@ -89,7 +93,7 @@ When the user explicitly requests algorithm-equivalent execution with fewer GPUs
 
 Do not enable this mode merely because GPUs are scarce. Without explicit user authorization, do not silently replace parallel execution with a slower serialized schedule.
 
-## Validation ladder
+## Validation ladder and evidence reuse
 
 Use the smallest test that can expose the next class of failure:
 
@@ -100,11 +104,13 @@ Use the smallest test that can expose the next class of failure:
 5. the exact full topology for one complete batch or rollout and checkpoint;
 6. the formal run.
 
-The smoke must preserve the formal topology and algorithm semantics. Reduce duration or data volume, not the number or ordering of distributed roles, unless that dimension is explicitly what the smoke is testing.
+This is a diagnostic ladder, not a requirement to rerun every rung for every attempt. Record evidence identities so a later launch can reuse results only when hosts, topology, communication binary/environment, code path, and relevant assets still match.
+
+When a smoke is needed, it must preserve the formal topology and algorithm semantics. Reduce duration or data volume, not the number or ordering of distributed roles, unless that dimension is explicitly what the smoke is testing. After such a smoke passes, launch formal training directly; do not add promotion machinery whose only purpose is to re-prove the same facts.
 
 ## Operate and diagnose from primary evidence
 
-Record rank-prefixed logs, per-node supervisor state, ready/failed/success records, process groups, service ports, resource use, collective phase, globally reduced metrics, checkpoint manifests, and W&B run IDs. Classify a stall by its last completed stage before changing NCCL or training hyperparameters.
+Record rank-prefixed logs, per-node supervisor state, ready/failed/success records, process groups, service ports, resource use, collective phase, globally reduced metrics, checkpoint manifests, and W&B run IDs. Milestone evidence must be append-only or step-specific: a later rank exit must not overwrite proof that all ranks completed an earlier step. Classify a stall by its last completed stage before changing NCCL or training hyperparameters.
 
 For research experiments, compose with `manage-paper-experiments` for paper IDs, ledger state, W&B reconciliation, and result reporting. Compose with `long-task-relay` only when a deterministic supervisor cannot decide the next action and human or agent judgment is genuinely required.
 

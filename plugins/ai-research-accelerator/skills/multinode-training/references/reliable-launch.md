@@ -8,7 +8,7 @@ The coordinator controls one-time cluster state. Workers execute node-local prep
 
 On shared storage, the coordinator is the only writer for shared code bundles, model assets, datasets, and launch manifests. Workers do not download, repair, or mutate shared caches concurrently. On non-shared storage, the coordinator prepares a manifest and each worker stages and verifies its own immutable copy.
 
-The coordinator is not allowed to report startup success until every expected node has passed the same stage.
+The coordinator is not allowed to report startup success until every expected node has passed the same stage. This role need not be a complex service: on a fixed two-node run, an atomic shared contract plus one launcher per node is often sufficient.
 
 ## Durable state machine
 
@@ -24,7 +24,7 @@ RESERVED
   -> COMPLETED or FAILED
 ```
 
-Every record should be atomic JSON or equivalent structured data, not an unqualified `touch` file. Include at least:
+Every record should be atomic JSON or equivalent structured data, not an unqualified `touch` file. Milestones such as `FIRST_OPTIMIZER_STEP` are immutable: write a new step-specific record rather than rewriting one liveness file. Include at least:
 
 ```json
 {
@@ -40,7 +40,7 @@ Every record should be atomic JSON or equivalent structured data, not an unquali
 }
 ```
 
-Include relevant asset-manifest hash, config hash, service endpoint, process-group ID, or W&B run ID at later stages. Readers must reject stale records whose experiment ID, attempt, nonce, commit, or expected hostname does not match.
+Include relevant asset-manifest hash, config hash, service endpoint, process-group ID, or W&B run ID at later stages. Readers must reject stale records whose experiment ID, attempt, nonce, commit, or expected hostname does not match. Mutable heartbeats may supplement milestones, but must never erase already established facts.
 
 ## Asset protocol
 
@@ -118,56 +118,56 @@ readiness until ownership is established.
 
 ## Transport preflight
 
-Treat NCCL transport as part of the frozen run contract, not ambient shell
-state. Before loading a large model across nodes:
+Treat the communication implementation and transport as part of the frozen run contract, not ambient shell state. Perform a fresh probe when this identity is unknown or changed; otherwise reuse a matching frozen report. When probing:
 
 1. inspect the actual active interfaces and RDMA HCAs on every host;
-2. unset transport-changing variables such as `NCCL_NET`, `NCCL_NET_PLUGIN`,
-   HCA/GID selectors, and cross-NIC controls before explicitly setting the
-   frozen `NCCL_IB_DISABLE` and `NCCL_SOCKET_IFNAME` contract; never preserve
-   arbitrary parent values with shell defaults;
-3. run a small multi-node collective using the exact host/rank/GPU topology;
-4. capture bounded `NCCL_DEBUG=INFO`/`NCCL_DEBUG_SUBSYS=NET` evidence and verify
+2. resolve the actual communication library before tuning transport. Inspect the library path loaded by a bounded process (`/proc/<pid>/maps`, loader diagnostics, or an equivalent check), record its checksum, and explicitly preload a pinned site NCCL/KCCL build when the platform requires one. The reported NCCL version or ABI is not enough;
+3. discard undeclared inherited transport variables, then explicitly restore
+   the complete platform-approved contract. This may include the network
+   plugin, library preload, HCA/GID selectors, cross-NIC policy,
+   `NCCL_IB_DISABLE`, and `NCCL_SOCKET_IFNAME`; never preserve arbitrary parent
+   values with shell defaults or erase required vendor settings;
+4. run a small multi-node tensor collective using the exact host/rank/GPU topology. For pairwise HSDP/replica traffic, cover every physical cross-node pair rather than only one world-wide average;
+5. capture bounded `NCCL_DEBUG=INFO`/`NCCL_DEBUG_SUBSYS=NET` evidence and verify
    the final transport selection (for example, `Using network IB`), not merely
    device discovery; reject a later `Using network Socket` when RDMA is
    required;
-5. enforce a generous but meaningful bandwidth/latency floor and record the
-   result in an attempt-scoped marker.
+6. repeat the probe when the observed failure is intermittent. One fast run is not evidence that a random slow path has been removed;
+7. enforce a generous but meaningful bandwidth/latency floor and record the result in an attempt-scoped report keyed by hosts, topology, library checksum, network policy, and probe code.
 
 Report payload or algorithmic bandwidth separately from NCCL bus bandwidth;
 their conversion depends on collective and world size. Run the probe in an
 owned process group so cancellation, timeout, or peer failure cannot leave
 workers holding GPUs or rendezvous ports.
 
-Never copy an interface name from another backend or cluster without checking
-that it exists on every target host. If the probe falls back to TCP when RDMA
-is required, fail before model loading. After transport is correct, profile the
-parallel mesh separately; do not conflate a transport failure with an FSDP
-topology decision.
+Never copy an interface name from another backend or cluster without checking that it exists on every target host. If the probe falls back to TCP when RDMA is required, fail before model loading. If it selects RDMA but remains intermittently slow, verify the loaded NCCL/KCCL implementation before cycling through HCA, QP, traffic-class, or GID tuning. After transport is correct, profile the parallel mesh separately; do not conflate a transport failure with an FSDP topology decision.
+
+Do not repeat a costly transport matrix for each formal attempt when a frozen report already matches all relevant identities. At launch, verify the report hash and communication-library checksum instead.
 
 Use a static rendezvous for a fixed research run unless elastic membership and checkpoint-resume semantics have been explicitly designed and tested.
 
 ## First-work validation
 
-Do not wait until job completion to discover a partial launch. While all workers are alive, require:
+Do not wait until job completion to discover a partial launch. Require:
 
-- every expected global rank joined;
+- every expected global rank joined, recorded at the distributed barrier or optimizer boundary;
 - the runtime topology matches the frozen contract;
 - one complete global batch or rollout was consumed;
 - at least one optimizer step completed with finite loss and gradients;
 - global sample/group counts and globally reduced metrics match expectations;
 - any tracker declared by the run contract created the exact run identity and logged the expected step;
-- a distributed checkpoint smoke succeeds when formal training will save checkpoints.
+- distributed checkpoint behavior has matching evidence when formal training will save checkpoints. Reuse an earlier exact-topology checkpoint smoke unless checkpoint code, format, topology, or storage changed.
 
-Write `FIRST_WORK_VALIDATED` only after these checks. A remote coding agent may end its turn after a deterministic supervisor owns the job and this evidence is either produced or will mechanically fail within a bounded deadline.
+Write immutable per-node completion records at the optimizer boundary, then derive `TRAINING_FIRST_WORK_VALIDATED` from distributed evidence. Track cloud visibility separately as `TRACKER_VERIFIED`. Do not require tracker visibility and instantaneous worker PID counts to be true in the same poll: cloud history is asynchronous and workers may legitimately enter teardown. The durable distributed milestone proves rank participation; tracker verification proves observability.
+
+Test the exact tracker API query against a real minimal run before making it a kill condition. Projected history queries can omit a valid step zero depending on API behavior; a false-negative telemetry probe must not terminate otherwise healthy training. After a bounded visibility wait, record an `OBSERVABILITY_DEGRADED` state and preserve training unless the frozen experiment contract explicitly requires fail-closed telemetry.
 
 Tracker startup and training health are separate states. Initialize telemetry
 and publish the exact run identity before an expensive step-zero evaluation,
 but do not call the smoke healthy until a real optimizer step is finite. A
 smoke evaluation should use the smallest fixed prompt subset that exercises
 the same path; it must not run a full paper evaluation suite before validating
-basic throughput. Add a phase-specific throughput deadline so a job that is
-alive but hundreds of times slower cannot occupy a cluster for days.
+basic throughput. Add a phase-specific throughput deadline so a job that is alive but hundreds of times slower cannot occupy a cluster for days. Once an exact-topology smoke has already established this evidence, a formal launcher should start directly and perform only the early handshake; it should not run another smoke or promotion stage.
 
 ## Resource and cleanup hooks
 
@@ -199,3 +199,5 @@ A send-and-forget prompt must give the remote agent:
 - a stopping rule: hand off to a deterministic supervisor after validation, without model-driven polling.
 
 The prompt is incomplete if the user must stay awake to notice that nothing launched.
+
+The remote agent's completion condition should normally be the durable first-work handshake, not formal-run termination. After that handshake, the owned `tmux` or scheduler job continues without model-driven polling.
