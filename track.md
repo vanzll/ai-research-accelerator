@@ -58,3 +58,24 @@
   experiment-specific W&B, queue, and GPU lifecycle contracts.
 - Validation passed: 14 unit tests, repository validator, skill quick validator,
   Codex plugin validator, Python compilation, CLI help smoke, and `git diff --check`.
+
+## 2026-08-24 - Add reliable multi-node training workflow
+
+- Added `multinode-training` as the sixth primary skill and raised the Codex and
+  Claude manifests to version `0.3.0`.
+- Based the framework-facing guidance on official PyTorch/torchrun, Hugging Face
+  Accelerate and Hub, DeepSpeed, Megatron-LM, and NVIDIA NCCL documentation.
+- Added a three-contract model: computation topology, launch control plane, and
+  external dependencies such as model assets and node-local reward services.
+- Encoded a single-writer asset protocol: the coordinator downloads and verifies
+  immutable assets, workers only verify, and formal training loads from explicit
+  offline/local-only paths. Blob presence alone is not accepted as a complete
+  Hugging Face snapshot.
+- Cluster startup now requires nonce-bound readiness from every expected node,
+  followed by one complete globally validated batch or rollout while workers and
+  the exact W&B run are alive. Rank-0 readiness alone is explicitly insufficient.
+- Added detailed references for topology and estimator semantics, reliable launch
+  state and marker contracts, staged diagnostics, and source provenance.
+- Validation passed for all 14 repository tests, the repository validator, the
+  Codex skill and plugin validators, Claude plugin validation, JSON parsing,
+  `git diff --check`, and live resolution of all 13 official reference URLs.
