@@ -19,7 +19,6 @@ A successful `torchrun` command is not proof that all three contracts are correc
 - Read [reliable-launch.md](references/reliable-launch.md) before writing a launcher, supervisor, remote-agent prompt, asset preparation flow, or recovery policy.
 - Read [diagnostics.md](references/diagnostics.md) when a job hangs, one node diverges, throughput regresses, metrics disagree, or startup does not reach training.
 - Read [source-notes.md](references/source-notes.md) when refreshing the skill or checking which rules come from PyTorch, Accelerate, DeepSpeed, Megatron-LM, Hugging Face Hub, or NCCL.
-- Read [hy15-kccl-case-study.md](references/hy15-kccl-case-study.md) when a vendor cluster has a custom NCCL/KCCL stack, transport performance is intermittent, or strict startup controls themselves are failing.
 
 ## Establish a frozen run contract
 
@@ -35,6 +34,11 @@ Before editing code or allocating GPUs, write down and mechanically validate:
 
 Fail closed when a required value is implicit, inconsistent, or node-specific without being declared. Do not silently choose a different batch size, model path, network interface, precision, or microbatch after launch.
 
+Solve the topology arithmetic before choosing a node count. Check that every
+parallel degree divides the relevant world/model dimensions, semantic groups
+divide the true DP population, and the proposed microbatch fits after the
+actual SP/TP split. More GPUs do not repair an invalid mesh.
+
 ## Use proportionate launch assurance
 
 The stages below describe separate failure domains, not mandatory work for every launch. Run only the smallest set not already covered by fresh, matching evidence:
@@ -42,13 +46,19 @@ The stages below describe separate failure domains, not mandatory work for every
 1. **Preflight:** verify host identity, code commit, environment, free ports, storage, GPU inventory, and absence of unowned conflicting processes.
 2. **Prepare immutable assets:** one coordinator writes; workers wait and verify. Never let all ranks mutate a shared model cache.
 3. **Start node-local dependencies:** each node starts only its own reward/data services with the training rendezvous environment removed, then proves both process liveness and application readiness.
-4. **Cluster-ready barrier:** require a nonce-bound ready record from every expected node. A rank-0 heartbeat alone is insufficient.
+4. **Cluster-ready barrier:** require nonce- and child-identity-bound application readiness from every expected node. A rank-0 process alone is insufficient.
 5. **Transport validation:** if the hosts, topology, network stack, or loaded communication library are new or changed, run a bounded collective with the exact topology. Otherwise verify and reuse a frozen report from repeated successful probes with matching identities.
 6. **Distributed launch:** start the same frozen command on every node with unique node rank and identical rendezvous values.
 7. **First-work validation:** persist immutable local evidence when all ranks complete one global batch or rollout and optimizer step; verify finite global metrics and tracker visibility independently.
 8. **Durable handoff:** once validated, a deterministic supervisor owns monitoring, cleanup, and authorized transitions. Do not keep an agent polling.
 
 Do not insert a new smoke between an already successful exact-topology smoke and a formal run unless code, assets, topology, communication stack, or algorithm semantics changed. A direct formal launch with an early first-work handshake is appropriate when matching evidence already exists. For exact marker contents, evidence reuse, asset rules, process-group cleanup, and remote prompt requirements, follow [reliable-launch.md](references/reliable-launch.md).
+
+Keep a strict complexity budget: prefer one canonical contract validator, one
+node wrapper, and one deterministic supervisor. A new gate is justified only
+when it catches a distinct expensive failure before that failure can occur.
+Do not duplicate parsers, nest smoke-to-formal promotion controllers, or add a
+watcher merely to re-prove evidence already frozen elsewhere.
 
 ## Non-negotiable correctness rules
 
@@ -58,10 +68,13 @@ Do not insert a new smoke between an already successful exact-topology smoke and
 - Preserve semantic groups such as K samples from one prompt on the same logical estimator boundary when the algorithm requires it. Do not assume a generic distributed sampler preserves group contiguity.
 - Distinguish model-sharding ranks from independent data replicas when computing global batch and sample count.
 - A checkpoint is complete only after every required rank finishes its collective portion and a final success manifest is written last.
-- A process existing is not readiness. Check the actual port or API and require a fresh heartbeat tied to the current nonce.
+- A process existing is not readiness. Require a nonce- and child-identity-bound application check; use a heartbeat only when no reliable health endpoint exists.
 - A node-local service must not inherit `RANK`, `WORLD_SIZE`, `LOCAL_RANK`, `MASTER_ADDR`, `MASTER_PORT`, or equivalent training rendezvous state unless it is deliberately part of that worker group. Sanitize these variables at the service process boundary, not globally.
 - Do not preserve undeclared inherited NCCL transport variables through `${VAR:-default}` in a frozen launcher. Resolve the complete platform-approved transport contract explicitly, then verify it with a fresh probe or a matching frozen report. High GPU utilization alone does not prove useful compute.
 - Treat the loaded communication binary as part of the contract. Two libraries may report the same NCCL ABI/version while selecting radically different vendor transports. On clusters with a site NCCL/KCCL build, verify the resolved `libnccl.so` path, preload the pinned vendor library when required, and record its checksum; HCA/QP/GID tuning cannot repair the wrong implementation.
+- Activate and verify the exact Python/launcher/import paths inside the final
+  persistent child shell. A parent-shell import or Conda activation does not
+  prove that tmux, a scheduler, or a later relay inherited the same environment.
 - Establish an owned worker process group through a child handshake or bounded polling. Never make cleanup correctness depend on one immediate PID/PGID observation after `setsid` or a background fork.
 - On any node failure, terminate the whole worker group unless the framework's elastic recovery semantics were deliberately designed and tested.
 - Preserve failed attempt evidence. Retry with a new attempt and nonce after repairing the cause; do not overwrite ambiguous lineage.

@@ -18,7 +18,9 @@ The total world size is the product of the independent mesh dimensions. The numb
 Write the intended identity explicitly, for example:
 
 ```text
-world_size = dp * tp * pp * cp
+model_parallel = product(independent TP, PP, SP/CP, EP degrees)
+world_size % model_parallel == 0
+dp = world_size / model_parallel
 global_batch = dp * local_batch_per_dp_replica * gradient_accumulation
 ```
 
@@ -40,6 +42,37 @@ within a node and synchronizes replicated shard groups across nodes. Do not
 choose between them from GPU count alone. First verify the interconnect, then
 benchmark the exact model topology and account for memory, optimizer state,
 gradient reduction, and framework mesh semantics.
+
+Before launch, solve all relevant divisibility constraints together:
+
+```text
+model_dimension % TP_or_SP_degree == 0   # when the implementation scatters it
+prompt_groups % DP_replicas == 0         # for uniform group ownership
+local_batch % estimator_group_size == 0
+```
+
+Framework support is stricter than mathematical possibility. For example, an
+attention implementation that scatters heads requires the SP degree to divide
+the head count; extra GPUs cannot be assigned to an arbitrary SP degree. If a
+uniform mesh cannot preserve the registered prompt/sample population, report
+the conflict instead of silently changing the batch.
+
+## Distinguish latency from throughput scaling
+
+Doubling pure DP usually doubles samples per unit time while leaving one-step
+latency similar because it also doubles the global batch. To reduce latency for
+a fixed global batch, the added ranks must split existing model work through a
+supported TP/SP/PP dimension or remove another measured bottleneck.
+
+Fewer microbatch calls do not imply proportionally fewer FLOPs: each larger
+call processes more samples. As a first-order planning estimate, activation
+pressure scales with `microbatch * tokens_per_sample / SP_degree`, while total
+per-rank compute also depends on the number of microbatches. Use this estimate
+to reject impossible configurations, then confirm the exact first backward
+with phase- and rank-specific memory metrics. Gradient accumulation changes the
+effective batch but does not lower one microbatch's activation peak. Preserve
+the optimizer boundary and loss normalization when changing only execution
+microbatching.
 
 ## Preserve estimator groups
 

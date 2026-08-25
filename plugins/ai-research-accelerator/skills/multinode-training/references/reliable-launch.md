@@ -24,6 +24,11 @@ RESERVED
   -> COMPLETED or FAILED
 ```
 
+These are evidence boundaries, not a requirement to build one daemon or file
+per state. A simple fixed run can use one atomic status record plus immutable
+first-work and terminal milestones. Implement only states that change a real
+recovery decision.
+
 Every record should be atomic JSON or equivalent structured data, not an unqualified `touch` file. Milestones such as `FIRST_OPTIMIZER_STEP` are immutable: write a new step-specific record rather than rewriting one liveness file. Include at least:
 
 ```json
@@ -109,12 +114,23 @@ Port listening alone is insufficient if the service can accept TCP before model 
 - Start workers in their own process groups. Cleanup must terminate the complete owned group, including children left after a launcher exits.
 - Propagate exceptions and signals into a cluster-wide failure record. Do not leave peers blocked in a collective.
 
+Prepare the environment inside the final shell that `exec`s each trainer, probe,
+or service. Verify the child process's interpreter, launcher, import roots, and
+loaded communication library against a small allowlisted fingerprint; never
+record credentials. A parent-shell check does not prove what tmux, a container,
+or a relay actually inherited.
+
 Process-group ownership needs a handshake. `setsid command &` followed by one
 immediate `ps` is racy: `setsid` may fork, or the parent may inspect the child
 before session creation. Use a non-forking child wrapper that publishes its
 PID/PGID after setup, or poll the intended invariant with a short bounded
 timeout while also checking child liveness. Do not release GPUs or report
 readiness until ownership is established.
+
+Each node supervisor should consume nonce-bound terminal failure records and
+terminate only this attempt's local process group. Treat one missed heartbeat
+or failed query as `SUSPECT`; require bounded repeated failure or an explicit
+peer terminal record before gang cleanup.
 
 ## Transport preflight
 
@@ -133,7 +149,10 @@ Treat the communication implementation and transport as part of the frozen run c
    device discovery; reject a later `Using network Socket` when RDMA is
    required;
 6. repeat the probe when the observed failure is intermittent. One fast run is not evidence that a random slow path has been removed;
-7. enforce a generous but meaningful bandwidth/latency floor and record the result in an attempt-scoped report keyed by hosts, topology, library checksum, network policy, and probe code.
+7. record the result in an attempt-scoped report keyed by hosts, topology,
+   library checksum, network policy, and probe code. Fail on a throughput floor
+   only when it is a predeclared, previously validated platform requirement;
+   otherwise a finite slow result triggers diagnosis, not automatic failure.
 
 Report payload or algorithmic bandwidth separately from NCCL bus bandwidth;
 their conversion depends on collective and world size. Run the probe in an
@@ -155,7 +174,6 @@ Do not wait until job completion to discover a partial launch. Require:
 - one complete global batch or rollout was consumed;
 - at least one optimizer step completed with finite loss and gradients;
 - global sample/group counts and globally reduced metrics match expectations;
-- any tracker declared by the run contract created the exact run identity and logged the expected step;
 - distributed checkpoint behavior has matching evidence when formal training will save checkpoints. Reuse an earlier exact-topology checkpoint smoke unless checkpoint code, format, topology, or storage changed.
 
 Write immutable per-node completion records at the optimizer boundary, then derive `TRAINING_FIRST_WORK_VALIDATED` from distributed evidence. Track cloud visibility separately as `TRACKER_VERIFIED`. Do not require tracker visibility and instantaneous worker PID counts to be true in the same poll: cloud history is asynchronous and workers may legitimately enter teardown. The durable distributed milestone proves rank participation; tracker verification proves observability.
@@ -168,11 +186,11 @@ Tracker startup, evaluation, and training health are separate states. Use this t
 2. immediately log and flush a lightweight startup row containing experiment ID, nonce, commit, topology, and a telemetry-started flag;
 3. persist local `STARTUP_ROW_COMMITTED` evidence with the tracker run ID;
 4. verify cloud visibility asynchronously;
-5. only then begin an expensive step-zero evaluation when practical. Cloud verification may continue in parallel and must not sit on the critical path of model evaluation or training.
+5. after the local startup commit, begin expensive step-zero evaluation when practical. Cloud verification continues in parallel and must not sit on the critical path of model evaluation or training.
 
 Do not treat a locally written startup marker as proof that cloud history exists, and do not wait for a full evaluation to create the first history row. A fixed tracker timeout must never kill a healthy job merely because a formal evaluation has many prompts. If visibility remains unavailable, record `OBSERVABILITY_DEGRADED`, retain local logs and tracker identity, and follow the experiment's explicit telemetry policy.
 
-Do not call a smoke healthy until a real optimizer step is finite. A smoke evaluation should use the smallest fixed prompt subset that exercises the same path; it must not run a full paper evaluation suite before validating basic throughput. Add a phase-specific throughput deadline so a job that is alive but hundreds of times slower cannot occupy a cluster for days. Once an exact-topology smoke has already established this evidence, a formal launcher should start directly and perform only the early handshake; it should not run another smoke or promotion stage.
+Do not call a smoke healthy until a real optimizer step is finite. A smoke evaluation should use the smallest fixed prompt subset that exercises the same path; it must not run a full paper evaluation suite before validating basic throughput. A health smoke may use a generous hang deadline so a job that is hundreds of times slower cannot occupy a cluster for days. A throughput experiment, however, must not classify “slower than expected” as failure; bound only genuine hangs and retain the measured slow result. Once an exact-topology smoke has already established this evidence, a formal launcher should start directly and perform only the early handshake; it should not run another smoke or promotion stage.
 
 ## Resource and cleanup hooks
 
@@ -197,7 +215,7 @@ A send-and-forget prompt must give the remote agent:
 - repository, branch, exact commit, clean-checkout requirement, and config/experiment IDs;
 - complete topology and rendezvous values;
 - asset ownership: coordinator prepares, worker verifies, no fallback network download;
-- bounded preflight, service readiness, heartbeat, and first-work gates;
+- bounded preflight, application readiness, and first-work gates;
 - process-group ownership and cleanup hooks;
 - durable logs and marker paths;
 - failure behavior and retry prohibition;
@@ -205,4 +223,8 @@ A send-and-forget prompt must give the remote agent:
 
 The prompt is incomplete if the user must stay awake to notice that nothing launched.
 
-The remote agent's completion condition should normally be the durable first-work handshake, not formal-run termination. After that handshake, the owned `tmux` or scheduler job continues without model-driven polling.
+The remote agent should exit after it has verified the frozen supervisor,
+environment, cleanup trap, and tracker startup identity. The token-free
+supervisor, not the agent, owns the later first-work gate and formal run. Use an
+event relay only when that gate requires judgment; never make the agent sleep
+and poll until an optimizer step or formal completion.

@@ -81,7 +81,8 @@ contract. Look for `NET/IB` versus `NET/Socket`, inherited
 `NCCL_IB_DISABLE=1`, nonexistent interface names, active RDMA devices that NCCL
 never opens, and asymmetric interface availability across hosts. Run a bounded
 collective benchmark outside the model. It should fail before training if the
-required transport is absent or implausibly slow.
+required transport is absent. A finite slowdown triggers diagnosis unless the
+run contract declares a previously validated hard transport floor.
 
 If RDMA is selected but identical probes alternate between fast and extremely slow paths, identify the loaded `libnccl.so`, not just the reported version. Vendor NCCL/KCCL builds can share an ABI/version with the wheel-bundled NCCL while implementing different multi-rail policy. Verify the resolved library path and checksum before changing HCA lists, QP counts, GID indices, traffic classes, or topology.
 
@@ -109,6 +110,12 @@ Checks:
 
 Separate rollout/inference, forward, backward, optimizer, evaluation, reward service, and checkpoint peaks. Record per-rank allocated/reserved peaks and identify the maximum rank.
 
+Classify an OOM as capacity, fragmentation, or co-location pressure before
+changing the algorithm. Cached `reserved` memory is not phase attribution, and
+an allocator hint is not a substitute for enough headroom. Account for
+node-local reward/eval services on the same GPU, and test the exact first
+backward because rollout success does not prove update memory fits.
+
 For performance, measure:
 
 - samples or tokens per second globally;
@@ -131,6 +138,10 @@ all-gathers cross nodes at every layer; node-local HSDP may reduce that traffic,
 but it is not a substitute for repairing RDMA.
 
 Optimize only after correctness. Prefer increasing useful local work or overlap before adding nodes when inter-node communication dominates.
+
+For a throughput probe, a finite slow step is a result, not a failed health
+gate. Use a wide timeout only to distinguish progress from a genuine hang, and
+collect enough post-warmup steps to compare medians.
 
 ## Failure report
 

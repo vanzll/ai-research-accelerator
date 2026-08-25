@@ -97,8 +97,9 @@
 - Clarified that after a matching smoke succeeds, formal training should launch
   directly with an early first-work handshake. Extra smoke/promotion machinery
   is justified only when it tests a changed contract.
-- Added `references/hy15-kccl-case-study.md` with the cluster-specific evidence
-  and its safe generalization boundary.
+- Initially recorded the cluster incident as a case study; its reusable rules
+  were later absorbed into the normative references and the incident narrative
+  was removed to keep the installed skill concise.
 - Raised the plugin version to `0.3.1`; an independent clean-context review
   found no blockers and its four ambiguity findings were resolved before sync.
 - A subsequent formal A25 failure exposed a distinct telemetry/evaluation race:
@@ -107,3 +108,23 @@
   healthy evaluation. The skill now requires an immediate startup row before
   expensive eval and separates tracker degradation from training failure.
 - Raised the plugin version to `0.3.2` for this correction.
+
+## 2026-08-25 - Distill multi-node lessons into launch invariants
+
+- Added mechanical topology arithmetic before node-count selection, including
+  backend-specific SP/TP divisibility, DP population, global batch, and the
+  distinction between throughput scaling and fixed-batch latency reduction.
+- Clarified that gradient accumulation does not reduce one microbatch's peak
+  memory and that rollout success does not prove the first backward will fit.
+- Required environment and communication-library verification inside the final
+  persistent child process instead of assuming parent-shell state is inherited.
+- Separated tracker startup, cloud visibility, first optimizer work, and
+  evaluation. A telemetry delay or a finite slow throughput result cannot kill
+  healthy training unless a validated hard contract explicitly requires it.
+- Simplified the control plane to one canonical validator, one node wrapper,
+  and one deterministic token-free supervisor. Removed redundant promotion
+  controllers, mandatory per-state daemons, agent polling, and the standalone
+  HY1.5/KCCL incident narrative.
+- Added nonce-scoped peer failure propagation, suspect-before-kill behavior,
+  first-backward memory diagnosis, and application-level readiness checks.
+- Raised the plugin version to `0.3.3`.
