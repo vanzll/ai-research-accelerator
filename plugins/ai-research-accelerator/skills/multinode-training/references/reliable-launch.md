@@ -161,6 +161,8 @@ workers holding GPUs or rendezvous ports.
 
 Never copy an interface name from another backend or cluster without checking that it exists on every target host. If the probe falls back to TCP when RDMA is required, fail before model loading. If it selects RDMA but remains intermittently slow, verify the loaded NCCL/KCCL implementation before cycling through HCA, QP, traffic-class, or GID tuning. After transport is correct, profile the parallel mesh separately; do not conflate a transport failure with an FSDP topology decision.
 
+For a reusable launcher, make this discovery internal to the launch rather than requiring a separate user-operated probe. Each node should publish an atomic topology report; the coordinator should derive an immutable contract from all expected reports; workers should validate their own slice; then the exact world should run a bounded collective and directly enter the formal trainer. Cache or reuse the contract only when host identities, topology reports, driver/runtime identity, communication-library checksum, and logical parallel mesh all match. Unknown vendor libraries are not candidates unless the platform explicitly allows them.
+
 Do not repeat a costly transport matrix for each formal attempt when a frozen report already matches all relevant identities. At launch, verify the report hash and communication-library checksum instead.
 
 Use a static rendezvous for a fixed research run unless elastic membership and checkpoint-resume semantics have been explicitly designed and tested.
