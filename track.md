@@ -246,3 +246,22 @@
   execute bounded requests and return structured evidence, and worker-to-worker
   needs are routed back through the coordinator.
 - Synchronized Codex and Claude plugin manifests at version `0.3.8`.
+
+## 2026-08-26 - Make first-mile dispatcher ownership explicit
+
+- Audited the four bootstrap failures against the skill. Coordinator-first
+  publication, conjunctive `watching` acceptance, and the self-bootstrap
+  deadlock were already represented; durable process ownership was only
+  implicit and has now been made mandatory.
+- Worker dispatchers must run under tmux, a scheduler, a service manager, or an
+  equivalent owner that survives the worker Agent turn. An ordinary background
+  child or momentarily live bootstrap PID is not sufficient.
+- Worker readiness now requires all checks simultaneously: persisted
+  `state.json`, matching PID/start identity and exact thread/config, a live
+  dispatcher under its durable owner, and status exactly `watching`.
+- Explicitly documented that a missing dispatcher cannot wake the Agent needed
+  to install it. Such a first-mile failure requires the foreground worker turn
+  to repair it or an external actor to re-enter the worker.
+- Removed the conflicting worker-before-coordinator `waiting-for-manifest`
+  path; coordinator assets and final bootstrap scripts must exist first.
+- Raised the synchronized plugin version to `0.3.9`.

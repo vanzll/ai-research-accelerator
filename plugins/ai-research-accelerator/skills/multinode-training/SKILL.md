@@ -112,6 +112,15 @@ trainer, first-work, and tracker evidence proves that distributed training
 started. Once the bus is accepted, stop re-testing it unless its code, manifest,
 thread registrations, or hosts change.
 
+Bootstrap coordinator-first: Node 0 must publish and validate the pinned tool,
+manifest, and final worker scripts before the user enters any worker prompt.
+Each worker executes its existing script and starts the dispatcher under a
+durable owner independent of the agent turn, such as tmux, a scheduler, or a
+service manager. The worker may return only when `state.json` exists, the
+recorded PID identity matches, that process is alive, and status is exactly
+`watching`. A live bootstrap shell, `waiting`, or `waiting-for-tool` is never
+acceptance; an absent dispatcher cannot wake its own agent to repair bootstrap.
+
 ## Non-negotiable correctness rules
 
 - All ranks must execute distributed collectives in the same order. Never put a collective checkpoint, metric reduction, or barrier inside a global-rank-zero-only branch.

@@ -116,15 +116,15 @@ Treat this initial worker wake path as a separate first-mile bootstrap. Before
 the user sends worker prompts, the coordinator must publish the exact tool
 checkout, manifest, and final node-specific bootstrap scripts. A worker prompt
 must execute that existing script, not merely create a waiter for future code.
-It may end only after `status` proves the exact dispatcher PID/thread/config is
-alive with `status=watching`. A transient bootstrap PID, tmux pane, log line, or
-`waiting for tool` record is not acceptance. The bus cannot repair its own
-missing dispatcher, so bootstrap failure must remain in the foreground worker
-turn until fixed or explicitly reported.
-
-Workers may start before Node 0: the detached dispatcher reports
-`waiting-for-manifest` and changes to `watching` after the matching immutable
-manifest appears. The worker agent itself must still end its turn immediately.
+The script must place the dispatcher under a durable owner independent of the
+agent turn, such as tmux, a scheduler, or a service manager. It may end only
+after all acceptance checks hold together: `state.json` exists, the recorded
+PID/start identity matches the exact dispatcher and thread/config, the process
+is alive under its durable owner, and `status=watching`. A live bootstrap PID,
+`waiting`, `waiting-for-tool`, a tmux pane without the dispatcher, or a log line
+is not acceptance. The bus cannot repair its own missing dispatcher, so
+bootstrap failure must remain in the foreground worker turn until fixed or
+explicitly reported; otherwise an external actor must re-enter that worker.
 
 ```bash
 python shared_agent_dispatcher.py init \

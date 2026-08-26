@@ -147,9 +147,21 @@ request text as shell code.
 Bootstrap this control plane in two explicit phases. First, the coordinator
 atomically prepares the pinned dispatcher checkout, immutable bus manifest, and
 final host-specific launch scripts. Only then does the user send each ordinary
-worker prompt, which must execute its script and verify the exact dispatcher
-state as `watching` with a matching live process. Never accept `bootstrap
-started`, `tool not ready`, or a momentarily live shell as worker readiness.
+worker prompt. That prompt must execute the already-published script, which
+starts the dispatcher under a durable process owner independent of the agent
+turn, such as tmux, a scheduler, or a service manager; it must not merely create
+a script, start a foreground/background child tied to the turn, or wait for
+future tools. Worker acceptance is conjunctive: `state.json` exists, the
+recorded PID/start identity matches the intended dispatcher, that process is
+alive under its durable owner, and status is exactly `watching`. Never accept
+`bootstrap started`, `waiting`, `waiting-for-tool`, or a momentarily live shell
+as worker readiness.
+
+This ordering prevents a first-mile deadlock. If the worker turn exits before a
+dispatcher exists, a later coordinator repair cannot use that dispatcher to
+wake the worker that must install it. Recovery then requires an external user,
+scheduler, or already-independent bootstrap mechanism; the bus cannot bootstrap
+itself.
 Before relying on the bus for training, run two harmless publish/resume/result
 round trips per worker; this proves both first delivery and re-arming.
 
