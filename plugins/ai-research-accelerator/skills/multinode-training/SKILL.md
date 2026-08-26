@@ -60,6 +60,26 @@ when it catches a distinct expensive failure before that failure can occur.
 Do not duplicate parsers, nest smoke-to-formal promotion controllers, or add a
 watcher merely to re-prove evidence already frozen elsewhere.
 
+## AI-assisted repair and node collaboration
+
+For unattended multi-node work, authorize agents to diagnose and repair
+operational bugs without granting permission to change the experiment. Freeze
+a machine-readable scientific contract first. Changes to communication,
+launching, environment activation, process ownership, telemetry, or framework
+compatibility may be repaired only when the scientific-contract hash and
+training semantics remain unchanged; every shared code repair needs a
+regression test, a new commit, and a new attempt/nonce. Any uncertain semantic
+effect requires user approval.
+
+Use one coordinator as the sole publisher of shared code, contracts, assets,
+and retry manifests. Worker agents may repair strictly node-local operational
+state, preserve evidence, and submit structured diagnoses or requests, but
+must not concurrently patch shared source. On a shared filesystem, coordinate
+through atomic structured records and append-only per-node events rather than
+having several agents edit one Markdown file. Read the AI-agent collaboration
+section of [reliable-launch.md](references/reliable-launch.md) before creating
+remote-agent prompts or an autonomous repair loop.
+
 ## Non-negotiable correctness rules
 
 - All ranks must execute distributed collectives in the same order. Never put a collective checkpoint, metric reduction, or barrier inside a global-rank-zero-only branch.
@@ -130,6 +150,11 @@ When a smoke is needed, it must preserve the formal topology and algorithm seman
 Record rank-prefixed logs, per-node supervisor state, ready/failed/success records, process groups, service ports, resource use, collective phase, globally reduced metrics, checkpoint manifests, and W&B run IDs. Milestone evidence must be append-only or step-specific: a later rank exit must not overwrite proof that all ranks completed an earlier step. Classify a stall by its last completed stage before changing NCCL or training hyperparameters.
 
 For research experiments, compose with `manage-paper-experiments` for paper IDs, ledger state, W&B reconciliation, and result reporting. Compose with `long-task-relay` only when a deterministic supervisor cannot decide the next action and human or agent judgment is genuinely required.
+
+Select one agent-control mode per unresolved task. If the user explicitly
+chooses Goal mode, do not add a relay for that same objective. For long waits,
+prefer ordinary mode plus a token-free supervisor or event-driven relay; use
+bounded agents only for actionable diagnosis and repair.
 
 ## Improve this skill from failures
 

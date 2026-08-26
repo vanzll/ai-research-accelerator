@@ -128,3 +128,19 @@
 - Added nonce-scoped peer failure propagation, suspect-before-kill behavior,
   first-backward memory diagnosis, and application-level readiness checks.
 - Raised the plugin version to `0.3.3`.
+
+## 2026-08-26 - Separate Goal ownership from relay and add multi-agent repair
+
+- Declared Goal mode and relay mode mutually exclusive for the same unresolved
+  objective. An explicit Goal remains agent-owned; ordinary relay mode hands
+  waiting to a token-free watcher and wakes a bounded agent only for events.
+- Added a shared-filesystem multi-agent protocol for unattended multi-node
+  repair: one coordinator publishes shared code and retry manifests, while
+  workers preserve evidence, repair node-local operational state, and exchange
+  atomic structured events, inbox requests, and acknowledgements.
+- Repair authority is limited by an immutable scientific-contract hash.
+  Operational fixes require regression tests, a new commit, and a new
+  attempt/nonce; scientific or uncertain changes require user approval.
+- Installed `long-task-relay` as a standalone local skill, synchronized the
+  updated `multinode-training` skill locally, and raised the plugin version to
+  `0.3.4`.

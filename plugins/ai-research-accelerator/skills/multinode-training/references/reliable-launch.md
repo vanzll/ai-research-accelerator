@@ -10,6 +10,74 @@ On shared storage, the coordinator is the only writer for shared code bundles, m
 
 The coordinator is not allowed to report startup success until every expected node has passed the same stage. This role need not be a complex service: on a fixed two-node run, an atomic shared contract plus one launcher per node is often sufficient.
 
+## AI-agent collaboration over shared storage
+
+Use agents for diagnosis and bounded repair, and mechanical supervisors for
+waiting and state transitions. Assign one coordinator agent as the only writer
+of shared source, run contracts, asset manifests, and retry manifests. Worker
+agents execute node-local stages, preserve evidence, and submit diagnoses or
+requests. They may repair node-local environment or process-control defects
+only when the repair cannot change training behavior. They must not create
+divergent shared code or independently alter the experiment.
+
+Before granting repair authority, publish an immutable scientific contract and
+hash covering at least the algorithm/objective, model and reward identities,
+data and prompt protocol, batch/group and optimizer semantics, precision,
+learning rate and optimizer, sampling/denoising settings, parallel mesh,
+evaluation, and checkpoint protocol. Operational repairs may change launcher
+or compatibility code only when this hash and those semantics remain fixed.
+Every shared repair must add a regression test, produce a new commit, and use
+a new attempt number and nonce. Changing attempt lineage is recovery metadata,
+not a scientific change. If an agent cannot prove that a proposed repair is
+semantics-preserving, it must request user approval instead of retrying.
+
+Do not use one concurrently edited progress document as the control plane.
+Keep a human-readable summary if useful, but use one-writer structured paths,
+for example:
+
+```text
+coordination/EXPERIMENT/
+  science-contract.json
+  coordinator.lock
+  attempts/A5/manifest.json
+  attempts/A5/status/node0.json
+  attempts/A5/status/node1.json
+  attempts/A5/events/node0/000001-ready.json
+  attempts/A5/events/node1/000004-failed.json
+  attempts/A5/inbox/node1/node0-REQUEST_ID.json
+  attempts/A5/acks/REQUEST_ID.json
+  attempts/A5/terminal.json
+  summary.md
+```
+
+Publish records by writing a temporary file, flushing it, and atomically
+renaming it into place. Events are immutable and append-only; mutable status
+files are atomically replaced by their owning node only. Include schema
+version, experiment, attempt, nonce, commit, science-contract hash, sender,
+hostname/rank, monotonic event sequence, UTC timestamp, event type, evidence
+paths, and request ID where applicable. Readers reject stale or mismatched
+records and deduplicate by event/request ID. A request for another node is a
+new immutable file in that node's inbox, never an edit to the recipient's
+status file; the recipient writes a separate acknowledgement.
+
+The unattended repair loop is:
+
+1. workers run the coordinator's frozen attempt manifest;
+2. a failure preserves logs and emits a structured failure event;
+3. the coordinator diagnoses all node evidence and classifies the proposed
+   change as operational or scientific;
+4. for an operational bug, the coordinator adds a regression test, publishes
+   a new commit and attempt manifest, and never rewrites the failed lineage;
+5. token-free worker relays consume the new manifest and retry together;
+6. the loop stops only after the declared first-work contract is satisfied.
+
+Do not keep one agent polling through long quiet phases. Choose exactly one
+control model for the unresolved task: an explicit Goal remains agent-owned and
+must not also use a relay; ordinary mode may hand waiting to a supervisor or
+event-driven relay, which wakes a fresh or idle bounded repair agent only for
+an actionable event. Archive compact coordination metadata after completion
+rather than deleting formal experiment lineage.
+
 ## Durable state machine
 
 Use attempt-scoped paths and advance monotonically:
@@ -207,6 +275,14 @@ Treat cluster-specific resource leases such as GPU reservation commands as confi
 
 Preserve logs, state records, and failed markers. Diagnose and repair the cause before retrying. Use a new attempt number and launch nonce; never make a failed lineage appear successful by deleting evidence. Reuse immutable assets only after they pass the repaired validation contract.
 
+When agents are authorized to repair and continue unattended, that authority
+does not include scientific changes. The coordinator may repair control-plane,
+communication, environment, telemetry, or semantics-preserving compatibility
+bugs; workers submit evidence and requests. Revalidate the scientific contract
+and runtime semantic quantities before publishing the next attempt. Validators
+must account for framework lifecycle transformations and should check canonical
+meaning rather than overloaded mutable argument names.
+
 When the failure is an asset-layout mismatch, repair discovery/import logic before retrying. Do not solve it by creating another cache root and downloading the same revision again.
 
 ## Remote-agent prompt contract
@@ -222,6 +298,14 @@ A send-and-forget prompt must give the remote agent:
 - durable logs and marker paths;
 - failure behavior and retry prohibition;
 - a stopping rule: hand off to a deterministic supervisor after validation, without model-driven polling.
+
+For an explicitly authorized autonomous repair workflow, replace an absolute
+retry prohibition with a narrow repair policy: list allowed operational bug
+classes, freeze the scientific-contract hash, designate the coordinator as the
+only shared-code publisher, require regression tests and new attempt lineage,
+and define the shared event/inbox paths. State that scientific or uncertain
+changes require user approval. Also state whether the prompt uses Goal mode or
+ordinary relay mode; never assign both to the same unresolved objective.
 
 The prompt is incomplete if the user must stay awake to notice that nothing launched.
 

@@ -13,8 +13,32 @@ same conversation when attention is required.
 Do not keep an agent alive to run `sleep`/status loops. Do not let the watcher
 interpret results, edit files, or choose a new task.
 
+## Goal mode and relay are mutually exclusive
+
+Treat Goal mode and relay mode as different owners of the same control loop.
+An unfinished Goal keeps the agent active; a relay requires the agent turn to
+end so a token-free watcher can resume an idle conversation only when an event
+needs judgment. Combining them creates two controllers and usually degrades
+Goal mode into model-driven polling.
+
+- If the user explicitly selects Goal mode for the unfinished long-running
+  objective, do not arm a relay for that objective and do not inject relay
+  events into that active Goal session.
+- If relay mode is selected, use ordinary mode: arm and verify the watcher,
+  then end the agent turn. The watcher owns waiting until it delivers one
+  deduplicated event.
+- A bounded Goal may repair one already-delivered incident and complete before
+  the relay is re-armed. It must not remain active while the relay watches the
+  same unresolved objective.
+- If the requested unattended workflow needs both autonomous repair and long
+  waits, use an ordinary-mode event-driven relay that starts a fresh or idle
+  bounded repair agent per actionable event. Do not keep one Goal alive merely
+  to wait.
+
 ## Choose the Mode
 
+- Honor an explicit user choice of Goal mode or relay mode before applying the
+  remaining routing rules; never silently substitute the other mode.
 - Use a deterministic supervisor when every transition and recovery action is
   already authorized. It should complete the workflow without waking an agent.
 - Use this relay when completion, failure, a milestone, or a stale heartbeat

@@ -1,5 +1,20 @@
 # Long-Task Relay Protocol
 
+## Control-mode ownership
+
+A relay assumes that no model session continuously owns the unresolved wait.
+The bootstrap agent arms the relay in ordinary mode, verifies it once, and
+ends its turn. The watcher later resumes an idle conversation or starts an
+explicit bounded agent invocation for one actionable event.
+
+Do not attach a relay to an active unfinished Goal. Goal mode is itself a
+persistent control loop and cannot hand the same objective to a dormant relay
+without creating duplicate ownership. When a user explicitly requests Goal
+mode, keep the workflow in Goal mode and accept its waiting behavior, or obtain
+an explicit switch to relay mode. A repair agent woken by a relay may use a
+bounded Goal for that incident only if it completes before the relay is
+re-armed.
+
 ## Architecture
 
 ```text
@@ -79,6 +94,8 @@ safe fallback when exact-session resume is unavailable.
 
 ## Production Checklist
 
+- Confirm that the target task is in ordinary mode and has no active unfinished
+  Goal owning the same objective.
 - Put state, logs, markers, and inbox on storage that survives the parent shell.
 - Use an absolute Python/script path and absolute monitored paths.
 - Confirm the final child environment before starting the long task.
