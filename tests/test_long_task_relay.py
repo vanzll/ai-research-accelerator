@@ -199,6 +199,84 @@ class RelayDeliveryTests(unittest.TestCase):
 
 
 class RelayLifecycleTests(unittest.TestCase):
+    def test_defer_finalize_acknowledges_when_watcher_is_already_gone(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_path, state = relay_state(directory)
+            state["pending_event"] = MODULE.make_event(state, "manual-test", {})
+            state["status"] = "notified"
+            MODULE.atomic_write_json(state_path, state)
+            args = mock.Mock(
+                state=str(state_path),
+                note="handled",
+                rearm=False,
+                target=None,
+                wake_instructions=None,
+                watcher_log=None,
+                helper_log=None,
+                wait_timeout=30,
+            )
+            self.assertEqual(MODULE.command_defer_finalize(args), 0)
+            finalized = MODULE.load_state(state_path)
+            self.assertEqual(finalized["status"], "acknowledged")
+            self.assertIsNone(finalized["pending_event"])
+            self.assertEqual(finalized["event_history"][-1]["acknowledgement"], "handled")
+
+    def test_defer_finalize_spawns_post_watcher_helper(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_path, state = relay_state(directory)
+            state["watcher_pid"] = os.getpid()
+            state["pending_event"] = MODULE.make_event(state, "manual-test", {})
+            MODULE.atomic_write_json(state_path, state)
+            args = mock.Mock(
+                state=str(state_path),
+                note="handled",
+                rearm=True,
+                target=20,
+                wake_instructions=None,
+                watcher_log=str(Path(directory) / "watcher.log"),
+                helper_log=str(Path(directory) / "helper.log"),
+                wait_timeout=30,
+            )
+            process = mock.Mock(pid=43210)
+            with mock.patch.object(MODULE, "process_alive", return_value=True), mock.patch.object(
+                MODULE.subprocess, "Popen", return_value=process
+            ) as popen:
+                self.assertEqual(MODULE.command_defer_finalize(args), 0)
+                self.assertEqual(MODULE.command_defer_finalize(args), 0)
+            self.assertEqual(popen.call_count, 1)
+            command = popen.call_args.args[0]
+            self.assertIn("_finalize-after-exit", command)
+            self.assertIn("--rearm", command)
+            self.assertEqual(command[command.index("--target") + 1], "20")
+            persisted = MODULE.load_state(state_path)
+            self.assertEqual(persisted["deferred_finalize"]["helper_pid"], 43210)
+
+    def test_stale_deferred_finalize_cannot_modify_new_generation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_path, state = relay_state(directory)
+            state["generation"] = 2
+            state["pending_event"] = MODULE.make_event(state, "new-event", {})
+            event_id = state["pending_event"]["id"]
+            MODULE.atomic_write_json(state_path, state)
+            self.assertEqual(
+                MODULE.finalize_event(
+                    state_path,
+                    expected_generation=1,
+                    expected_event_id="old-event",
+                    expected_watcher_pid=None,
+                    note="stale",
+                    rearm=False,
+                    target=None,
+                    wake_instructions=None,
+                    watcher_log=None,
+                ),
+                0,
+            )
+            current = MODULE.load_state(state_path)
+            self.assertEqual(current["generation"], 2)
+            self.assertEqual(current["pending_event"]["id"], event_id)
+            self.assertEqual(current["event_history"], [])
+
     def test_background_watcher_establishes_heartbeat_and_cancels(self):
         with tempfile.TemporaryDirectory() as directory:
             state_path, state = relay_state(directory)

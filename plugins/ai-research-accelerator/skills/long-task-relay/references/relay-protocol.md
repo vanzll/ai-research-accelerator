@@ -7,13 +7,44 @@ The bootstrap agent arms the relay in ordinary mode, verifies it once, and
 ends its turn. The watcher later resumes an idle conversation or starts an
 explicit bounded agent invocation for one actionable event.
 
-Do not attach a relay to an active unfinished Goal. Goal mode is itself a
-persistent control loop and cannot hand the same objective to a dormant relay
-without creating duplicate ownership. When a user explicitly requests Goal
-mode, keep the workflow in Goal mode and accept its waiting behavior, or obtain
-an explicit switch to relay mode. A repair agent woken by a relay may use a
-bounded Goal for that incident only if it completes before the relay is
-re-armed.
+Do not attach a relay to an active unfinished Goal for the same objective. Goal
+mode is itself a persistent control loop and cannot hand that objective to a
+dormant relay without creating duplicate ownership. This rule is scoped to a
+conversation and objective, not an entire distributed job: a coordinator Goal
+may own bounded global recovery while separate ordinary-mode worker agents use
+relays for node-local requests. A worker relay must target only its worker
+conversation. A repair agent woken by a relay may use a bounded Goal for that
+incident only if it completes before the relay is re-armed.
+
+The hybrid is appropriate only while the coordinator Goal owns a bounded,
+active recovery phase. Shared-file changes do not wake a blocked Goal. If the
+coordinator must enter a long quiet wait, perform an explicit ownership handoff:
+end the Goal control loop, arm an ordinary coordinator relay, verify it, and
+then let that relay resume an idle coordinator agent on the next event. Never
+leave both owners active during the handoff.
+
+For a coordinator-worker workflow, use a star topology. The coordinator writes
+an immutable request into the target worker's inbox. A separately reviewed
+token-free inbox dispatcher validates and deduplicates the request, then wakes
+the idle worker agent; it never interprets or executes arbitrary instructions.
+The worker acknowledges the request, performs one bounded task, emits a
+structured result, and ends its turn. The dispatcher uses an at-least-once wake
+protocol: it atomically claims the request with a bounded lease, but does not
+mark it processed until a terminal result exists. A wake that dies before ACK
+may be redelivered with the same request ID after the claim expires. An ACK
+without a terminal result becomes an `incomplete-request` event for the
+coordinator and is never an automatic task retry. After `failed` or
+`needs_coordinator`, only the coordinator may issue a new request ID. Workers
+report to the coordinator rather than issuing commands directly to one another.
+
+The base `long_task_relay.py` watcher observes fixed markers, logs, progress,
+PIDs, and tmux state and handles one event per generation. It is not by itself
+a repeated structured-inbox consumer. Do not claim this workflow is available
+until the chosen dispatcher validates coordinator identity, target node,
+attempt, nonce, scientific-contract hash, fencing epoch, and request ID; tracks
+claims, acknowledgements, results, and processed request IDs; distinguishes
+wake retry from task retry; and has an end-to-end crash-recovery test. A fixed
+one-shot relay may still wake an agent for one already-selected request.
 
 ## Architecture
 
@@ -113,11 +144,18 @@ safe fallback when exact-session resume is unavailable.
 python long_task_relay.py arm ... --background
 python long_task_relay.py status --state STATE
 python long_task_relay.py test-event --state STATE --reason manual-test --deliver
+python long_task_relay.py defer-finalize --state STATE --rearm
 python long_task_relay.py acknowledge --state STATE
 python long_task_relay.py rearm --state STATE --background
 python long_task_relay.py cancel --state STATE
 ```
 
 `acknowledge` records that the agent handled the event. `rearm` starts a new
-event generation; use it only after updating the monitored target or underlying
-task when necessary.
+event generation; direct use requires the watcher to have exited. A resumed
+agent should instead run `defer-finalize`, optionally with `--rearm`; its helper
+waits for the delivering watcher to exit before acknowledging and starting the
+next generation. Deferred finalization is fenced by generation, event ID, and
+delivering watcher PID; repeated requests reuse a live matching helper, and a
+late helper cannot modify a newer generation. Re-arm only after updating the
+monitored target or resolving a persistent trigger, otherwise the same
+condition will fire immediately.

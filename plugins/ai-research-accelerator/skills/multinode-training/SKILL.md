@@ -80,6 +80,19 @@ having several agents edit one Markdown file. Read the AI-agent collaboration
 section of [reliable-launch.md](references/reliable-launch.md) before creating
 remote-agent prompts or an autonomous repair loop.
 
+For a Goal-driven launch, prefer a star-shaped hybrid: the coordinator Goal
+owns global diagnosis and semantics-preserving recovery only through the
+declared first-work gate; ordinary-mode worker agents are woken by token-free
+relays for bounded node-local requests, while deterministic supervisors own all
+waiting and authorized transitions. This is valid because control-mode
+ownership is scoped per role and objective. A relay must not wake the active
+coordinator Goal or duplicate any transition it owns. If the coordinator also
+enters a long external wait, explicitly hand that objective to an ordinary
+coordinator relay; a blocked Goal cannot be treated as event notification.
+The coordinator host's local training process remains supervisor-owned; its
+node-local operational incidents are handled directly by the coordinator Goal,
+not by a second relay targeting the same conversation.
+
 ## Non-negotiable correctness rules
 
 - All ranks must execute distributed collectives in the same order. Never put a collective checkpoint, metric reduction, or barrier inside a global-rank-zero-only branch.
@@ -151,10 +164,11 @@ Record rank-prefixed logs, per-node supervisor state, ready/failed/success recor
 
 For research experiments, compose with `manage-paper-experiments` for paper IDs, ledger state, W&B reconciliation, and result reporting. Compose with `long-task-relay` only when a deterministic supervisor cannot decide the next action and human or agent judgment is genuinely required.
 
-Select one agent-control mode per unresolved task. If the user explicitly
-chooses Goal mode, do not add a relay for that same objective. For long waits,
-prefer ordinary mode plus a token-free supervisor or event-driven relay; use
-bounded agents only for actionable diagnosis and repair.
+Select one agent-control mode per conversation and unresolved objective. If the
+user explicitly chooses Goal mode, do not add a relay for that same objective.
+Different nodes may use different modes under an explicit coordinator-worker
+protocol. For long waits, prefer a token-free supervisor or event-driven relay;
+use agents only for actionable diagnosis and bounded repair.
 
 ## Improve this skill from failures
 

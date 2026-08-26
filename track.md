@@ -144,3 +144,46 @@
 - Installed `long-task-relay` as a standalone local skill, synchronized the
   updated `multinode-training` skill locally, and raised the plugin version to
   `0.3.4`.
+
+## 2026-08-26 - Add coordinator-Goal and worker-relay control topology
+
+- Corrected the overly broad Goal/relay exclusion: exclusivity is scoped to one
+  conversation and unresolved objective, not the entire distributed job.
+- Added the supported hybrid topology in which a Node 0 coordinator Goal owns
+  global recovery through first-work validation while ordinary-mode worker
+  agents are woken by token-free relays for bounded node-local requests.
+- Standardized a star-shaped control plane: workers report to the coordinator;
+  only the coordinator publishes shared code, assets, retry manifests, and
+  cross-node requests. Workers do not command one another.
+- Strengthened the shared-file protocol with fencing epochs, immutable inbox
+  requests, acknowledgements, terminal results, request deduplication, and an
+  explicit ban on executing arbitrary request text from a watcher.
+- Recorded the hybrid's boundary: shared-file changes cannot wake a blocked
+  coordinator Goal, so a long coordinator wait requires an explicit ownership
+  handoff to an ordinary coordinator relay.
+- Independent review caught that the existing generic relay is one event per
+  generation and does not monitor a dynamic structured inbox. The protocol now
+  requires a separately reviewed repeated-request dispatcher, keeps manifest
+  consumption and gang retries supervisor-owned, and reserves relays for
+  judgment or repair events.
+- Added an atomic coordinator lease with a fencing epoch, frozen coordinator
+  identity, exact sender/target validation, and worker-owned per-request ACK and
+  result records to prevent duplicate coordinators and ambiguous completion.
+- Disallowed in-attempt coordinator takeover; coordinator loss creates a new
+  attempt and fencing epoch.
+- Added an experiment-scoped lock-owning publisher and atomic
+  `active-attempt.json`. Workers re-check it before accepting commands or
+  starting training, so superseded coordinators cannot revive an old attempt.
+- Defined at-least-once wake delivery with expiring claims. Requests are not
+  processed until terminal results exist; ACK-without-result is escalated to the
+  coordinator, and task retries require new request IDs.
+- Clarified that supervisors observe first work while the coordinator Goal owns
+  recovery decisions through that gate, and that Node 0's local worker remains
+  supervisor-owned rather than creating a second Node 0 agent.
+- Added `long_task_relay.py defer-finalize` so a resumed agent can durably
+  request acknowledgement and optional re-arming after the synchronously
+  delivering watcher exits; direct in-turn rearm was impossible by lifecycle.
+- Fenced deferred finalization by generation, event ID, and watcher PID, reused
+  matching live helpers, and added regression coverage preventing stale helpers
+  from changing a newer relay generation.
+- Raised the plugin version to `0.3.5`.

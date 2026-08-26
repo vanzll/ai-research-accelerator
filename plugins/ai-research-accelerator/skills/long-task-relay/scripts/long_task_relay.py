@@ -331,7 +331,8 @@ def event_prompt(state: dict[str, Any], event: dict[str, Any]) -> str:
         lines.extend(["Agent instructions:", str(instructions)])
     lines.append(
         "This is a mechanical notification. Verify primary evidence, handle one event, "
-        "then acknowledge and re-arm only if further waiting is required."
+        "then run defer-finalize; add --rearm only if further waiting is required and "
+        "the monitored condition or target has been advanced."
     )
     return "\n".join(lines) + "\n"
 
@@ -886,6 +887,176 @@ def command_acknowledge(args: argparse.Namespace) -> int:
     return 0
 
 
+def finalize_event(
+    state_path: Path,
+    expected_generation: int,
+    expected_event_id: str,
+    expected_watcher_pid: int | None,
+    note: str,
+    rearm: bool,
+    target: float | None,
+    wake_instructions: str | None,
+    watcher_log: str | None,
+) -> int:
+    lock_path = state_path.with_suffix(state_path.suffix + ".finalize.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("w", encoding="utf-8") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        state = load_state(state_path)
+        event = state.get("pending_event")
+        if int(state.get("generation", 0)) != expected_generation:
+            return 0
+        if not event or event.get("id") != expected_event_id:
+            return 0
+        current_watcher_pid = state.get("watcher_pid")
+        if current_watcher_pid not in (None, expected_watcher_pid):
+            return 0
+        if expected_watcher_pid and process_alive(expected_watcher_pid):
+            raise RuntimeError(f"watcher pid {expected_watcher_pid} is still alive")
+        event["acknowledged_at"] = timestamp()
+        event["acknowledgement"] = note
+        state.setdefault("event_history", []).append(event)
+        state["pending_event"] = None
+        state["status"] = "acknowledged"
+        state["watcher_pid"] = None
+        state.pop("deferred_finalize", None)
+        atomic_write_json(state_path, state)
+    if not rearm:
+        return 0
+    return command_rearm(
+        argparse.Namespace(
+            state=str(state_path),
+            target=target,
+            wake_instructions=wake_instructions,
+            background=True,
+            watcher_log=watcher_log,
+        )
+    )
+
+
+def command_finalize_after_exit(args: argparse.Namespace) -> int:
+    state_path = Path(args.state).expanduser().resolve()
+    expected_pid = int(args.expected_watcher_pid)
+    expected_generation = int(args.generation)
+    expected_event_id = str(args.event_id)
+    deadline = time.monotonic() + int(args.wait_timeout)
+    while time.monotonic() < deadline:
+        state = load_state(state_path)
+        if int(state.get("generation", 0)) != expected_generation:
+            return 0
+        if not process_alive(expected_pid):
+            return finalize_event(
+                state_path,
+                expected_generation=expected_generation,
+                expected_event_id=expected_event_id,
+                expected_watcher_pid=expected_pid,
+                note=args.note,
+                rearm=args.rearm,
+                target=args.target,
+                wake_instructions=args.wake_instructions,
+                watcher_log=args.watcher_log,
+            )
+        time.sleep(0.25)
+    raise RuntimeError(f"watcher pid {expected_pid} did not exit before deferred finalize timeout")
+
+
+def command_defer_finalize(args: argparse.Namespace) -> int:
+    state_path = Path(args.state).expanduser().resolve()
+    schedule_lock_path = state_path.with_suffix(state_path.suffix + ".finalize.lock")
+    schedule_lock_path.parent.mkdir(parents=True, exist_ok=True)
+    immediate: tuple[int, str, int | None] | None = None
+    with schedule_lock_path.open("w", encoding="utf-8") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        state = load_state(state_path)
+        event = state.get("pending_event")
+        if not event:
+            return 0
+        generation = int(state["generation"])
+        event_id = str(event["id"])
+        existing = state.get("deferred_finalize") or {}
+        existing_pid = existing.get("helper_pid")
+        if (
+            existing_pid
+            and existing.get("generation") == generation
+            and existing.get("event_id") == event_id
+            and process_alive(int(existing_pid))
+        ):
+            print(json.dumps(existing, indent=2, sort_keys=True))
+            return 0
+        watcher_pid = state.get("watcher_pid")
+        if not watcher_pid or not process_alive(int(watcher_pid)):
+            immediate = (generation, event_id, int(watcher_pid) if watcher_pid else None)
+        else:
+            command = [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                "_finalize-after-exit",
+                "--state",
+                str(state_path),
+                "--expected-watcher-pid",
+                str(watcher_pid),
+                "--generation",
+                str(generation),
+                "--event-id",
+                event_id,
+                "--wait-timeout",
+                str(args.wait_timeout),
+                "--note",
+                args.note,
+            ]
+            if args.rearm:
+                command.append("--rearm")
+            if args.target is not None:
+                command.extend(["--target", str(args.target)])
+            if args.wake_instructions is not None:
+                command.extend(["--wake-instructions", args.wake_instructions])
+            if args.watcher_log is not None:
+                command.extend(["--watcher-log", args.watcher_log])
+
+            helper_log = Path(
+                args.helper_log
+                or state_path.with_suffix(state_path.suffix + ".deferred-finalize.log")
+            )
+            helper_log.parent.mkdir(parents=True, exist_ok=True)
+            with helper_log.open("a", encoding="utf-8") as handle:
+                process = subprocess.Popen(
+                    command,
+                    stdin=subprocess.DEVNULL,
+                    stdout=handle,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                    close_fds=True,
+                    text=True,
+                )
+            _BACKGROUND_PROCESSES[process.pid] = process
+            state["deferred_finalize"] = {
+                "helper_pid": process.pid,
+                "helper_log": str(helper_log),
+                "generation": generation,
+                "event_id": event_id,
+                "watcher_pid": int(watcher_pid),
+                "rearm": bool(args.rearm),
+                "requested_at": timestamp(),
+            }
+            atomic_write_json(state_path, state)
+            print(json.dumps(state["deferred_finalize"], indent=2, sort_keys=True))
+            return 0
+
+    if immediate:
+        return finalize_event(
+            state_path,
+            expected_generation=immediate[0],
+            expected_event_id=immediate[1],
+            expected_watcher_pid=immediate[2],
+            note=args.note,
+            rearm=args.rearm,
+            target=args.target,
+            wake_instructions=args.wake_instructions,
+            watcher_log=args.watcher_log,
+        )
+    return 0
+
+
 def command_rearm(args: argparse.Namespace) -> int:
     state_path = Path(args.state).expanduser().resolve()
     state = load_state(state_path)
@@ -1018,6 +1189,35 @@ def build_parser() -> argparse.ArgumentParser:
     add_state_argument(acknowledge)
     acknowledge.add_argument("--note", default="handled by agent")
     acknowledge.set_defaults(func=command_acknowledge)
+
+    defer_finalize = subparsers.add_parser(
+        "defer-finalize",
+        help="Acknowledge after the current watcher exits and optionally rearm",
+    )
+    add_state_argument(defer_finalize)
+    defer_finalize.add_argument("--note", default="handled by agent")
+    defer_finalize.add_argument("--rearm", action="store_true")
+    defer_finalize.add_argument("--target", type=float)
+    defer_finalize.add_argument("--wake-instructions")
+    defer_finalize.add_argument("--watcher-log")
+    defer_finalize.add_argument("--helper-log")
+    defer_finalize.add_argument("--wait-timeout", type=int, default=300)
+    defer_finalize.set_defaults(func=command_defer_finalize)
+
+    finalize_after_exit = subparsers.add_parser(
+        "_finalize-after-exit", help="Internal deferred-finalize helper"
+    )
+    add_state_argument(finalize_after_exit)
+    finalize_after_exit.add_argument("--expected-watcher-pid", type=int, required=True)
+    finalize_after_exit.add_argument("--generation", type=int, required=True)
+    finalize_after_exit.add_argument("--event-id", required=True)
+    finalize_after_exit.add_argument("--wait-timeout", type=int, required=True)
+    finalize_after_exit.add_argument("--note", required=True)
+    finalize_after_exit.add_argument("--rearm", action="store_true")
+    finalize_after_exit.add_argument("--target", type=float)
+    finalize_after_exit.add_argument("--wake-instructions")
+    finalize_after_exit.add_argument("--watcher-log")
+    finalize_after_exit.set_defaults(func=command_finalize_after_exit)
 
     rearm = subparsers.add_parser("rearm", help="Start a new event generation")
     add_state_argument(rearm)

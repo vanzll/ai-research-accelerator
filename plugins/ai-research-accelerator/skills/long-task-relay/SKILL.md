@@ -13,13 +13,12 @@ same conversation when attention is required.
 Do not keep an agent alive to run `sleep`/status loops. Do not let the watcher
 interpret results, edit files, or choose a new task.
 
-## Goal mode and relay are mutually exclusive
+## Goal mode and relay are mutually exclusive per objective
 
-Treat Goal mode and relay mode as different owners of the same control loop.
-An unfinished Goal keeps the agent active; a relay requires the agent turn to
-end so a token-free watcher can resume an idle conversation only when an event
-needs judgment. Combining them creates two controllers and usually degrades
-Goal mode into model-driven polling.
+Treat control ownership per agent conversation and unresolved objective, not
+globally across a distributed job. An unfinished Goal and a relay must not own
+the same control loop: the Goal keeps that agent active, while a relay requires
+an idle conversation that can be resumed only when judgment is needed.
 
 - If the user explicitly selects Goal mode for the unfinished long-running
   objective, do not arm a relay for that objective and do not inject relay
@@ -30,6 +29,15 @@ Goal mode into model-driven polling.
 - A bounded Goal may repair one already-delivered incident and complete before
   the relay is re-armed. It must not remain active while the relay watches the
   same unresolved objective.
+- Different agents may use different modes for distinct role-owned objectives.
+  In particular, a coordinator Goal may own bounded cluster recovery through
+  first-work validation while ordinary-mode worker agents are woken by their
+  own relays for node-local requests. Worker relays must never resume the active
+  coordinator Goal or make two agents owners of the same transition.
+- Use that hybrid only for a bounded coordinator phase. If the coordinator also
+  reaches a long external wait with no actionable work, explicitly hand its
+  objective from Goal mode to ordinary relay mode; a blocked Goal is not a
+  filesystem notification mechanism and will not self-wake from a new marker.
 - If the requested unattended workflow needs both autonomous repair and long
   waits, use an ordinary-mode event-driven relay that starts a fresh or idle
   bounded repair agent per actionable event. Do not keep one Goal alive merely
@@ -59,8 +67,10 @@ Goal mode into model-driven polling.
 4. Arm the watcher with
    [scripts/long_task_relay.py](scripts/long_task_relay.py), verify its state
    and heartbeat, then end the agent turn.
-5. When woken, inspect primary evidence, handle exactly one event, acknowledge
-   it, and re-arm with a new generation only if more waiting is needed.
+5. When woken, inspect primary evidence and handle exactly one event. Use
+   `defer-finalize` so acknowledgement and optional re-arming happen only after
+   the delivering watcher exits; re-arm only after advancing the monitored
+   target or otherwise removing the handled trigger.
 
 Read [references/relay-protocol.md](references/relay-protocol.md) before
 constructing a production relay or a remote-agent prompt.
@@ -79,6 +89,9 @@ constructing a production relay or a remote-agent prompt.
   `command` delivery may execute the configured argv without a shell.
 - A watcher observes and notifies. Automatic restart or mutation belongs in a
   separately reviewed deterministic supervisor.
+- A resumed command cannot directly acknowledge or re-arm the watcher that is
+  synchronously waiting for it to exit. Use `defer-finalize`; direct
+  `acknowledge`/`rearm` are for an already stopped watcher.
 
 ## Minimal Example
 
