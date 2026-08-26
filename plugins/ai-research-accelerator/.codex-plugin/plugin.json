@@ -1,6 +1,6 @@
 {
   "name": "ai-research-accelerator",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "description": "An author-first workflow for accelerating research from reliable distributed training through top-conference publication.",
   "author": {
     "name": "vanzll",

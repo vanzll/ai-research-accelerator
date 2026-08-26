@@ -101,6 +101,17 @@ publisher; workers return ACK/result records and never command one another.
 This is the default prompt pattern when the user asks for one Goal coordinator
 plus relay workers on a shared filesystem.
 
+Accept this agent bus only after every worker completes a harmless first
+delivery and a second follow-up delivery, returns terminal results, and
+re-enters `watching` under the same exact host/thread identity. Interpret
+`watching` with no active request as healthy idle capacity, not a blocked Goal
+or failed pipeline. Keep control-plane and experiment evidence separate:
+`AGENT_BUS_READY` proves that Node 0 can command and receive results;
+`TASK_DISPATCHED` proves that a real bounded action was issued; only node-ready,
+trainer, first-work, and tracker evidence proves that distributed training
+started. Once the bus is accepted, stop re-testing it unless its code, manifest,
+thread registrations, or hosts change.
+
 ## Non-negotiable correctness rules
 
 - All ranks must execute distributed collectives in the same order. Never put a collective checkpoint, metric reduction, or barrier inside a global-rank-zero-only branch.

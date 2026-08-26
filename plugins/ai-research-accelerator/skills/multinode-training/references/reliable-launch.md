@@ -153,6 +153,34 @@ started`, `tool not ready`, or a momentarily live shell as worker readiness.
 Before relying on the bus for training, run two harmless publish/resume/result
 round trips per worker; this proves both first delivery and re-arming.
 
+Treat the following as distinct evidence claims:
+
+1. `AGENT_BUS_READY`: every expected worker has the exact registered host and
+   thread, a live dispatcher heartbeat, two successful harmless round trips,
+   and a final `watching` state;
+2. per-request `TASK_DISPATCHED` and `TASK_COMPLETED`: Node 0 published a real
+   bounded action, the intended worker accepted that request ID, and later
+   returned its terminal result;
+3. `NODE_LOCAL_READY` or `CLUSTER_READY`: the requested node-local services and
+   launch prerequisites produced matching attempt evidence;
+4. `TRAINING_STARTED` and `FIRST_WORK_VALIDATED`: the trainer and distributed
+   optimizer boundary produced their own immutable evidence.
+
+Do not infer a later claim from an earlier one. Request/ACK/result counts alone
+are insufficient because harmless transport tests use the same mechanism as
+real work; inspect the immutable request action and completion predicate. A
+dispatcher in `watching` with no active request is healthy and available. It
+does not mean the pipeline failed, and waiting for the coordinator to publish
+the next request is not by itself a blocked worker Goal.
+
+Monitor the bus mechanically from dispatcher heartbeats, inbox depth, claims,
+ACKs, terminal results, invocation identity, and stale/failure records. Alert
+or wake an agent only for a new actionable request, stale dispatcher, failed
+delivery, `needs_coordinator`, or declared completion. Do not wake all workers
+merely to ask for status. Preserve old failed request records, but scope health
+and completion decisions to the active attempt, fencing epoch, and expected
+request IDs so historical failures do not poison a repaired bus.
+
 This is command-and-report interaction, not unrestricted peer chat. Node 0 is
 the only command publisher; workers report evidence in their result records.
 Worker-to-worker requests are forbidden. If a worker needs another node to act,
@@ -178,6 +206,11 @@ These are evidence boundaries, not a requirement to build one daemon or file
 per state. A simple fixed run can use one atomic status record plus immutable
 first-work and terminal milestones. Implement only states that change a real
 recovery decision.
+
+`AGENT_BUS_READY` and each request's dispatch/ACK/result lifecycle are
+control-plane sidecar evidence, not extra stages in this experiment state
+machine. Agent requests may occur before or between several experiment stages;
+they must never be used as substitutes for those stages' primary evidence.
 
 Every record should be atomic JSON or equivalent structured data, not an unqualified `touch` file. Milestones such as `FIRST_OPTIMIZER_STEP` are immutable: write a new step-specific record rather than rewriting one liveness file. Include at least:
 

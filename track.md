@@ -227,3 +227,22 @@
   and prove an exact live dispatcher in `watching` state before returning.
 - Added a mandatory two-round harmless request/response smoke before training
   may depend on the agent bus. Raised the plugin version to `0.3.7`.
+
+## 2026-08-26 - Validate and clarify shared-filesystem agent coordination
+
+- The four-node workflow completed exact-thread delivery from the Node 0 Goal
+  coordinator to all three ordinary worker agents, terminal result return, and
+  repeated dispatcher re-arming through the shared filesystem.
+- Added explicit evidence boundaries for `AGENT_BUS_READY`, `TASK_DISPATCHED`,
+  node/cluster readiness, and actual training startup. A successful bus smoke
+  no longer implies that a formal training command has been published.
+- Defined `watching` with no active request as healthy idle state rather than a
+  blocked Goal or failed pipeline, and required request action inspection rather
+  than relying on aggregate ACK/result counts.
+- Added token-free bus monitoring guidance over heartbeat, inbox, claim, ACK,
+  result, and invocation state. Historical failures remain preserved but are
+  filtered by active attempt, fencing epoch, and expected request IDs.
+- Kept the proven star topology: Node 0 is the sole command publisher, workers
+  execute bounded requests and return structured evidence, and worker-to-worker
+  needs are routed back through the coordinator.
+- Synchronized Codex and Claude plugin manifests at version `0.3.8`.
