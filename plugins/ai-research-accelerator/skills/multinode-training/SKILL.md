@@ -93,6 +93,14 @@ The coordinator host's local training process remains supervisor-owned; its
 node-local operational incidents are handled directly by the coordinator Goal,
 not by a second relay targeting the same conversation.
 
+Implement worker wake-up with the `long-task-relay` skill's reviewed
+`shared_agent_dispatcher.py`: each worker ordinary thread registers its exact
+thread ID once, then a token-free watcher validates and delivers repeated Node
+0 requests through `codex exec resume`. Node 0 remains the only request
+publisher; workers return ACK/result records and never command one another.
+This is the default prompt pattern when the user asks for one Goal coordinator
+plus relay workers on a shared filesystem.
+
 ## Non-negotiable correctness rules
 
 - All ranks must execute distributed collectives in the same order. Never put a collective checkpoint, metric reduction, or barrier inside a global-rank-zero-only branch.

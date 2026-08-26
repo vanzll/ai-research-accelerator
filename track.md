@@ -187,3 +187,31 @@
   matching live helpers, and added regression coverage preventing stale helpers
   from changing a newer relay generation.
 - Raised the plugin version to `0.3.5`.
+
+## 2026-08-26 - Implement repeated coordinator-to-worker agent dispatch
+
+- Added `shared_agent_dispatcher.py`, an attempt-scoped shared-filesystem
+  message bus for a Node 0 Goal coordinator and ordinary-mode worker threads.
+- Node 0 atomically publishes bounded requests; worker dispatchers validate the
+  coordinator, target host, attempt, nonce, contract hash, fencing epoch, and
+  request ID before resuming the exact `$CODEX_THREAD_ID`.
+- Added worker-owned claims, ACKs, terminal results, request deduplication,
+  transcript-idle checks, structured agent output, and conservative handling of
+  accepted-but-incomplete tasks.
+- Added regression tests for repeated delivery, deduplication, stale-request
+  rejection, immutable manifests, and duplicate coordinator ownership.
+- Independent review found the initial epoch check was self-referential. Added
+  a lock-advanced authority record so a higher epoch fences both stale
+  publishers and stale dispatchers.
+- Replaced synchronous resume with a gate-controlled helper process group. ACK
+  now means Codex was actually spawned; helper identity, start token, claim
+  lease, bounded idle wait, crash recovery, stop cleanup, and terminal result
+  ownership are mechanically tested.
+- Closed review-discovered takeover, close, and stop races with quiescent
+  authority locks, worker-local stop serialization, and a child-owned lock
+  inherited by the actual Codex process. Fault tests now kill both helper and
+  dispatcher while Codex is active and verify that a newer epoch cannot begin.
+- Updated the relay and multi-node skills so Node 0 Goal plus Node 1--N relay is
+  the default shared-storage collaboration pattern; workers no longer use Goal
+  mode or poll shared files with model tokens.
+- Raised the plugin version to `0.3.6`.

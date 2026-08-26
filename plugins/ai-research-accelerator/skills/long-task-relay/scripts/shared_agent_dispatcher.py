@@ -1,0 +1,1524 @@
+#!/usr/bin/env python3
+"""Shared-filesystem request bus for coordinator and worker Codex sessions."""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import fcntl
+import glob
+import json
+import os
+import shlex
+import signal
+import socket
+import subprocess
+import sys
+import time
+import uuid
+from pathlib import Path
+from typing import Any
+
+
+SCHEMA_VERSION = 1
+TERMINAL_RESULT_STATES = {"succeeded", "failed", "needs_coordinator"}
+ACTIVE_DISPATCHER_STATES = {
+    "waiting-for-manifest",
+    "watching",
+    "waiting-for-thread-idle",
+    "agent-active",
+}
+_BACKGROUND_PROCESSES: dict[int, subprocess.Popen[str]] = {}
+
+
+def timestamp() -> str:
+    return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def short_hostname() -> str:
+    return socket.gethostname().split(".", 1)[0]
+
+
+def read_json(path: Path) -> dict[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"expected a JSON object: {path}")
+    return value
+
+
+def _write_temporary(path: Path, payload: dict[str, Any]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    with temporary.open("x", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    return temporary
+
+
+def atomic_replace_json(path: Path, payload: dict[str, Any]) -> None:
+    temporary = _write_temporary(path, payload)
+    os.replace(temporary, path)
+
+
+def atomic_create_json(path: Path, payload: dict[str, Any]) -> bool:
+    """Atomically publish an immutable JSON record without overwriting a peer."""
+    temporary = _write_temporary(path, payload)
+    try:
+        os.link(temporary, path)
+    except FileExistsError:
+        return False
+    finally:
+        temporary.unlink(missing_ok=True)
+    return True
+
+
+def process_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    owned = _BACKGROUND_PROCESSES.get(pid)
+    if owned is not None:
+        if owned.poll() is None:
+            return True
+        _BACKGROUND_PROCESSES.pop(pid, None)
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def process_start_token(pid: int) -> str | None:
+    proc_stat = Path(f"/proc/{pid}/stat")
+    if proc_stat.exists():
+        try:
+            fields = proc_stat.read_text(encoding="utf-8").rsplit(")", 1)[1].split()
+            return f"proc:{fields[19]}"
+        except (OSError, IndexError):
+            return None
+    try:
+        completed = subprocess.run(
+            ["ps", "-o", "lstart=", "-p", str(pid)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    value = completed.stdout.strip()
+    return f"ps:{value}" if completed.returncode == 0 and value else None
+
+
+def process_argv(pid: int) -> list[str]:
+    proc_cmdline = Path(f"/proc/{pid}/cmdline")
+    if proc_cmdline.exists():
+        try:
+            return [
+                value.decode("utf-8", errors="replace")
+                for value in proc_cmdline.read_bytes().split(b"\0")
+                if value
+            ]
+        except OSError:
+            return []
+    if not process_alive(pid):
+        return []
+    try:
+        completed = subprocess.run(
+            ["ps", "-o", "command=", "-p", str(pid)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return []
+    command = completed.stdout.strip()
+    try:
+        return shlex.split(command)
+    except ValueError:
+        return []
+
+
+def option_value(argv: list[str], option: str) -> str | None:
+    try:
+        return argv[argv.index(option) + 1]
+    except (ValueError, IndexError):
+        return None
+
+
+def dispatcher_process_matches(state: dict[str, Any], root: Path, node: str) -> bool:
+    pid = int(state.get("pid", -1))
+    if not process_alive(pid):
+        return False
+    if process_start_token(pid) != state.get("process_start_token"):
+        return False
+    argv = process_argv(pid)
+    return (
+        any(Path(value).name == "shared_agent_dispatcher.py" for value in argv)
+        and option_value(argv, "--root") == str(root)
+        and option_value(argv, "--node") == node
+        and option_value(argv, "--instance-id") == state.get("instance_id")
+    )
+
+
+def manifest_path(root: Path) -> Path:
+    return root / "agent-bus-manifest.json"
+
+
+def load_manifest(root: Path) -> dict[str, Any]:
+    manifest = read_json(manifest_path(root))
+    if manifest.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError("unsupported agent-bus manifest schema")
+    required = {
+        "experiment_id",
+        "attempt",
+        "launch_nonce",
+        "science_contract_hash",
+        "fencing_epoch",
+        "coordinator_node",
+        "coordinator_thread_id",
+        "authority_root",
+        "nodes",
+    }
+    missing = sorted(required - manifest.keys())
+    if missing:
+        raise ValueError(f"agent-bus manifest missing: {', '.join(missing)}")
+    if not isinstance(manifest["nodes"], dict):
+        raise ValueError("manifest nodes must be an object")
+    return manifest
+
+
+def parse_node(value: str) -> tuple[str, str]:
+    if "=" not in value:
+        raise argparse.ArgumentTypeError("node must use NODE=HOSTNAME")
+    node, hostname = value.split("=", 1)
+    if not node.startswith("node") or not node[4:].isdigit() or not hostname:
+        raise argparse.ArgumentTypeError("node must use nodeN=HOSTNAME")
+    return node, hostname.split(".", 1)[0]
+
+
+def initialize_bus(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    authority_root = Path(args.authority_root).expanduser().resolve()
+    nodes = dict(args.node)
+    if args.coordinator_node not in nodes:
+        raise ValueError("coordinator node is missing from --node entries")
+    expected_host = nodes[args.coordinator_node]
+    if short_hostname() != expected_host and not args.allow_host_mismatch:
+        raise ValueError(
+            f"coordinator host mismatch: running on {short_hostname()}, expected {expected_host}"
+        )
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "experiment_id": args.experiment_id,
+        "attempt": args.attempt,
+        "launch_nonce": args.launch_nonce,
+        "science_contract_hash": args.science_contract_hash,
+        "fencing_epoch": args.fencing_epoch,
+        "coordinator_node": args.coordinator_node,
+        "coordinator_hostname": expected_host,
+        "coordinator_thread_id": args.coordinator_thread_id,
+        "authority_root": str(authority_root),
+        "nodes": nodes,
+        "created_at": timestamp(),
+    }
+    authority_root.mkdir(parents=True, exist_ok=True)
+    lock_path = authority_root / "coordinator.lock"
+    path = manifest_path(root)
+    identity_keys = [
+        "schema_version",
+        "experiment_id",
+        "attempt",
+        "launch_nonce",
+        "science_contract_hash",
+        "fencing_epoch",
+        "coordinator_node",
+        "coordinator_hostname",
+        "coordinator_thread_id",
+        "authority_root",
+        "nodes",
+    ]
+    with lock_path.open("a+", encoding="utf-8") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        active_path = authority_root / "active-agent-bus.json"
+        active = read_json(active_path) if active_path.exists() else None
+        active_payload = {
+            "schema_version": SCHEMA_VERSION,
+            "root": str(root),
+            "experiment_id": args.experiment_id,
+            "attempt": args.attempt,
+            "launch_nonce": args.launch_nonce,
+            "science_contract_hash": args.science_contract_hash,
+            "fencing_epoch": args.fencing_epoch,
+            "coordinator_node": args.coordinator_node,
+            "coordinator_hostname": expected_host,
+            "coordinator_thread_id": args.coordinator_thread_id,
+            "updated_at": timestamp(),
+        }
+        if active is not None and active.get("root") != str(root):
+            if args.fencing_epoch <= int(active.get("fencing_epoch", -1)):
+                raise ValueError("new agent-bus fencing epoch must be strictly greater")
+        if path.exists():
+            existing = load_manifest(root)
+            if any(existing.get(key) != payload.get(key) for key in identity_keys):
+                raise ValueError(f"refusing to replace mismatched manifest: {path}")
+        for node in nodes:
+            for directory in ("inbox", "claims", "acks", "results", "invocations"):
+                (root / directory / node).mkdir(parents=True, exist_ok=True)
+        # Workers wait for the manifest. Publish authority first and the
+        # immutable manifest last so they cannot observe a half-advanced bus.
+        atomic_replace_json(active_path, active_payload)
+        if not path.exists() and not atomic_create_json(path, payload):
+            raise RuntimeError(f"failed to publish agent-bus manifest: {path}")
+    print(path)
+    return 0
+
+
+def validate_local_role(manifest: dict[str, Any], node: str) -> None:
+    expected_host = manifest["nodes"].get(node)
+    if expected_host is None:
+        raise ValueError(f"unknown node in manifest: {node}")
+    if short_hostname() != expected_host:
+        raise ValueError(
+            f"host mismatch for {node}: running on {short_hostname()}, expected {expected_host}"
+        )
+
+
+def validate_coordinator_identity(manifest: dict[str, Any]) -> None:
+    coordinator = manifest["coordinator_node"]
+    validate_local_role(manifest, coordinator)
+    expected_thread = manifest.get("coordinator_thread_id")
+    observed_thread = os.environ.get("CODEX_THREAD_ID")
+    if not expected_thread or observed_thread != expected_thread:
+        raise ValueError(
+            "coordinator thread mismatch: publisher is not the frozen Node 0 Goal"
+        )
+
+
+def validate_active_authority(root: Path, manifest: dict[str, Any]) -> None:
+    active_path = Path(manifest["authority_root"]) / "active-agent-bus.json"
+    active = read_json(active_path)
+    expected = {
+        "root": str(root.resolve()),
+        "experiment_id": manifest["experiment_id"],
+        "attempt": manifest["attempt"],
+        "launch_nonce": manifest["launch_nonce"],
+        "science_contract_hash": manifest["science_contract_hash"],
+        "fencing_epoch": manifest["fencing_epoch"],
+        "coordinator_node": manifest["coordinator_node"],
+        "coordinator_hostname": manifest["coordinator_hostname"],
+        "coordinator_thread_id": manifest["coordinator_thread_id"],
+    }
+    for key, value in expected.items():
+        if active.get(key) != value:
+            raise ValueError(f"agent bus was superseded: active {key} mismatch")
+
+
+def authority_lock_path(manifest: dict[str, Any]) -> Path:
+    return Path(manifest["authority_root"]) / "coordinator.lock"
+
+
+def worker_control_lock_path(root: Path, node: str) -> Path:
+    path = root / "dispatcher" / node / "control.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def worker_stop_path(root: Path, node: str) -> Path:
+    return root / "dispatcher" / node / "stop-intent.json"
+
+
+def publish_request(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    manifest = load_manifest(root)
+    with authority_lock_path(manifest).open("a+", encoding="utf-8") as lock:
+        fcntl.flock(lock, fcntl.LOCK_SH)
+        validate_active_authority(root, manifest)
+        if (root / "terminal.json").exists():
+            raise ValueError("agent bus is closed")
+        sender = manifest["coordinator_node"]
+        validate_coordinator_identity(manifest)
+        if args.target == sender:
+            raise ValueError("the coordinator Goal must handle its own node directly")
+        if args.target not in manifest["nodes"]:
+            raise ValueError(f"unknown target node: {args.target}")
+        message = args.message
+        if args.message_file:
+            message = Path(args.message_file).read_text(encoding="utf-8")
+        if not message or not message.strip():
+            raise ValueError("request message is empty")
+        request_id = args.request_id or uuid.uuid4().hex
+        created_ns = time.time_ns()
+        payload = {
+            "schema_version": SCHEMA_VERSION,
+            "kind": "agent-request",
+            "request_id": request_id,
+            "experiment_id": manifest["experiment_id"],
+            "attempt": manifest["attempt"],
+            "launch_nonce": manifest["launch_nonce"],
+            "science_contract_hash": manifest["science_contract_hash"],
+            "fencing_epoch": manifest["fencing_epoch"],
+            "sender": sender,
+            "sender_hostname": manifest["nodes"][sender],
+            "target": args.target,
+            "target_hostname": manifest["nodes"][args.target],
+            "action": args.action,
+            "message": message.strip(),
+            "completion_predicate": args.completion_predicate,
+            "evidence_paths": args.evidence_path,
+            "created_at": timestamp(),
+            "created_unix_ns": created_ns,
+        }
+        destination = (
+            root
+            / "inbox"
+            / args.target
+            / f"{created_ns:020d}-from-{sender}-{request_id}.json"
+        )
+        if not atomic_create_json(destination, payload):
+            raise FileExistsError(destination)
+    print(destination)
+    return 0
+
+
+def close_bus(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    manifest = load_manifest(root)
+    with authority_lock_path(manifest).open("a+", encoding="utf-8") as lock:
+        # Active worker turns hold a shared lock for their full lifetime. Close
+        # therefore becomes a quiescent fence and cannot race another wake.
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        validate_active_authority(root, manifest)
+        coordinator = manifest["coordinator_node"]
+        validate_coordinator_identity(manifest)
+        payload = {
+            "schema_version": SCHEMA_VERSION,
+            "kind": "agent-bus-terminal",
+            "experiment_id": manifest["experiment_id"],
+            "attempt": manifest["attempt"],
+            "launch_nonce": manifest["launch_nonce"],
+            "science_contract_hash": manifest["science_contract_hash"],
+            "fencing_epoch": manifest["fencing_epoch"],
+            "sender": coordinator,
+            "sender_hostname": manifest["coordinator_hostname"],
+            "status": args.status,
+            "summary": args.summary,
+            "created_at": timestamp(),
+        }
+        path = root / "terminal.json"
+        if not atomic_create_json(path, payload):
+            existing = read_json(path)
+            if any(
+                existing.get(key) != payload.get(key)
+                for key in payload
+                if key != "created_at"
+            ):
+                raise ValueError(f"refusing to replace mismatched terminal record: {path}")
+    print(path)
+    return 0
+
+
+def discover_session_path(thread_id: str) -> Path | None:
+    codex_home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
+    pattern = str(codex_home / "sessions" / "**" / f"*{thread_id}*.jsonl")
+    candidates = [Path(path) for path in glob.glob(pattern, recursive=True)]
+    return max(candidates, key=lambda path: path.stat().st_mtime) if candidates else None
+
+
+def thread_idle(session_path: Path, quiet_seconds: int) -> bool:
+    if not session_path.exists():
+        return False
+    if time.time() - session_path.stat().st_mtime < quiet_seconds:
+        return False
+    latest_lifecycle = None
+    with session_path.open("rb") as handle:
+        handle.seek(0, os.SEEK_END)
+        size = handle.tell()
+        handle.seek(max(size - 4 * 1024 * 1024, 0))
+        for line in handle.read().decode("utf-8", errors="replace").splitlines():
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if record.get("type") != "event_msg":
+                continue
+            event_type = record.get("payload", {}).get("type")
+            if event_type in {"task_started", "task_complete"}:
+                latest_lifecycle = event_type
+    return latest_lifecycle == "task_complete"
+
+
+def validate_request(
+    request: dict[str, Any], manifest: dict[str, Any], node: str
+) -> str | None:
+    expected = {
+        "schema_version": SCHEMA_VERSION,
+        "kind": "agent-request",
+        "experiment_id": manifest["experiment_id"],
+        "attempt": manifest["attempt"],
+        "launch_nonce": manifest["launch_nonce"],
+        "science_contract_hash": manifest["science_contract_hash"],
+        "fencing_epoch": manifest["fencing_epoch"],
+        "sender": manifest["coordinator_node"],
+        "sender_hostname": manifest["coordinator_hostname"],
+        "target": node,
+        "target_hostname": manifest["nodes"][node],
+    }
+    for key, value in expected.items():
+        if request.get(key) != value:
+            return f"{key} mismatch: {request.get(key)!r} != {value!r}"
+    if not request.get("request_id") or not request.get("message"):
+        return "request_id and message are required"
+    return None
+
+
+def worker_record(
+    manifest: dict[str, Any], node: str, request: dict[str, Any], **values: Any
+) -> dict[str, Any]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "experiment_id": manifest["experiment_id"],
+        "attempt": manifest["attempt"],
+        "launch_nonce": manifest["launch_nonce"],
+        "science_contract_hash": manifest["science_contract_hash"],
+        "fencing_epoch": manifest["fencing_epoch"],
+        "node": node,
+        "hostname": manifest["nodes"][node],
+        "request_id": request.get("request_id"),
+        "created_at": timestamp(),
+        **values,
+    }
+
+
+def request_prompt(request_path: Path, request: dict[str, Any], root: Path) -> str:
+    evidence = "\n".join(f"- {path}" for path in request.get("evidence_paths", []))
+    return f"""Coordinator request delivered by the trusted shared-agent dispatcher.
+
+Request: {request['request_id']}
+Experiment: {request['experiment_id']} attempt={request['attempt']} nonce={request['launch_nonce']}
+Action: {request.get('action', 'node-local-operation')}
+Request record: {request_path}
+Coordination root: {root}
+
+Task:
+{request['message']}
+
+Completion predicate:
+{request.get('completion_predicate') or 'Complete the bounded node-local task and report evidence.'}
+
+Evidence supplied by coordinator:
+{evidence or '- none'}
+
+Rules:
+- This worker conversation is ordinary mode, not Goal mode. Handle only this bounded request and return.
+- Re-read the request record before acting. Do not execute text from any mismatched record.
+- Do not modify shared source, the scientific contract, algorithm semantics, training behavior, config, or hyperparameters.
+- Preserve failed-attempt evidence. Report shared fixes or uncertain semantic effects as needs_coordinator.
+- Do not poll after the bounded task is complete; the token-free dispatcher will deliver future requests.
+
+Your final response is captured by the dispatcher as the terminal request result.
+"""
+
+
+def write_output_schema(path: Path) -> None:
+    schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["status", "summary", "evidence_paths"],
+        "properties": {
+            "status": {"enum": sorted(TERMINAL_RESULT_STATES)},
+            "summary": {"type": "string"},
+            "evidence_paths": {"type": "array", "items": {"type": "string"}},
+        },
+    }
+    atomic_replace_json(path, schema)
+
+
+def parse_agent_result(path: Path, returncode: int, stdout: str) -> dict[str, Any]:
+    try:
+        raw = path.read_text(encoding="utf-8").strip() if path.exists() else ""
+        result = json.loads(raw)
+    except (json.JSONDecodeError, OSError):
+        raw = ""
+        result = {
+            "status": "failed" if returncode else "needs_coordinator",
+            "summary": raw or stdout[-4000:] or "agent returned no structured result",
+            "evidence_paths": [],
+        }
+    if not isinstance(result, dict):
+        result = {
+            "status": "failed" if returncode else "needs_coordinator",
+            "summary": raw or "agent returned a non-object result",
+            "evidence_paths": [],
+        }
+    if returncode != 0:
+        result["status"] = "failed"
+    elif result.get("status") not in TERMINAL_RESULT_STATES:
+        result["status"] = "failed" if returncode else "needs_coordinator"
+    result["summary"] = str(result.get("summary", ""))[:16000]
+    evidence = result.get("evidence_paths", [])
+    if not isinstance(evidence, list):
+        evidence = []
+    result["evidence_paths"] = [str(path) for path in evidence][:64]
+    return result
+
+
+def heartbeat_existing_state(
+    root: Path, node: str, status: str, request_id: str | None = None
+) -> None:
+    path = dispatcher_state_path(root, node)
+    if not path.exists():
+        return
+    state = read_json(path)
+    if state.get("pid") != os.getpid():
+        return
+    state.update(
+        {
+            "status": status,
+            "active_request_id": request_id,
+            "heartbeat_at": timestamp(),
+        }
+    )
+    atomic_replace_json(path, state)
+
+
+def helper_process_matches(invocation: dict[str, Any]) -> bool:
+    pid = int(invocation.get("helper_pid", -1))
+    if not process_alive(pid):
+        return False
+    if process_start_token(pid) != invocation.get("helper_start_token"):
+        return False
+    argv = process_argv(pid)
+    return (
+        any(Path(value).name == "shared_agent_dispatcher.py" for value in argv)
+        and "_resume-helper" in argv
+        and option_value(argv, "--spec") == invocation.get("spec_path")
+    )
+
+
+def invocation_group_matches(invocation: dict[str, Any]) -> bool:
+    if helper_process_matches(invocation):
+        return True
+    started_path = Path(str(invocation.get("started_path", "")))
+    if not started_path.exists():
+        return False
+    try:
+        started = read_json(started_path)
+        codex_pid = int(started.get("codex_pid", -1))
+        expected_pgid = int(invocation.get("helper_pgid", -1))
+        return (
+            process_alive(codex_pid)
+            and process_start_token(codex_pid) == started.get("codex_start_token")
+            and os.getpgid(codex_pid) == expected_pgid
+        )
+    except (OSError, ProcessLookupError, ValueError):
+        return False
+
+
+def terminate_invocation(invocation: dict[str, Any], timeout: int = 15) -> None:
+    identity_deadline = time.monotonic() + min(timeout, 5)
+    while not invocation_group_matches(invocation) and time.monotonic() < identity_deadline:
+        if helper_process_matches(invocation):
+            break
+        time.sleep(0.05)
+    if not invocation_group_matches(invocation):
+        return
+    pgid = int(invocation.get("helper_pgid", -1))
+    if pgid <= 0:
+        raise RuntimeError("active helper has no valid process group")
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    deadline = time.monotonic() + timeout
+    while invocation_group_matches(invocation) and time.monotonic() < deadline:
+        time.sleep(0.2)
+    if invocation_group_matches(invocation):
+        os.killpg(pgid, signal.SIGKILL)
+
+
+def create_terminal_result(
+    path: Path,
+    base: dict[str, Any],
+    status: str,
+    summary: str,
+    evidence_paths: list[str],
+    **values: Any,
+) -> None:
+    atomic_create_json(
+        path,
+        {
+            **base,
+            "status": status,
+            "summary": summary[:16000],
+            "evidence_paths": evidence_paths[:64],
+            "created_at": timestamp(),
+            **values,
+        },
+    )
+
+
+def codex_launcher(args: argparse.Namespace) -> int:
+    """Publish child identity before exec so a dead helper cannot orphan Codex."""
+    spec_path = Path(args.spec).expanduser().resolve()
+    spec = read_json(spec_path)
+    authority_fd = os.open(spec["authority_lock_path"], os.O_RDWR | os.O_CREAT, 0o600)
+    fcntl.flock(authority_fd, fcntl.LOCK_SH)
+    # The actual Codex process, not only its helper, owns the quiescence fence.
+    # Keep this descriptor across exec so helper SIGKILL cannot release it.
+    os.set_inheritable(authority_fd, True)
+    started_path = Path(spec["started_path"])
+    codex_gate_path = Path(spec["codex_gate_path"])
+    start_token = process_start_token(os.getpid())
+    if start_token is None:
+        return 2
+    if not atomic_create_json(
+        started_path,
+        {
+            "schema_version": SCHEMA_VERSION,
+            "request_id": spec["request_id"],
+            "codex_pid": os.getpid(),
+            "codex_start_token": start_token,
+            "process_group": os.getpgrp(),
+            "started_at": timestamp(),
+        },
+    ):
+        return 3
+    deadline = time.monotonic() + int(spec.get("gate_timeout", 120))
+    while not codex_gate_path.exists():
+        if time.monotonic() >= deadline:
+            return 4
+        time.sleep(0.05)
+    prompt_fd = os.open(spec["prompt_path"], os.O_RDONLY)
+    stdout_fd = os.open(
+        spec["stdout_path"], os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600
+    )
+    os.dup2(prompt_fd, 0)
+    os.dup2(stdout_fd, 1)
+    os.dup2(stdout_fd, 2)
+    os.close(prompt_fd)
+    os.close(stdout_fd)
+    command = [
+        spec["codex_path"],
+        "exec",
+        "resume",
+        "--output-schema",
+        spec["schema_path"],
+        "--output-last-message",
+        spec["output_path"],
+        spec["thread_id"],
+        "-",
+    ]
+    os.execvp(command[0], command)
+    return 127
+
+
+def resume_helper(args: argparse.Namespace) -> int:
+    spec_path = Path(args.spec).expanduser().resolve()
+    spec = read_json(spec_path)
+    gate_path = Path(spec["gate_path"])
+    result_path = Path(spec["result_path"])
+    ack_path = Path(spec["ack_path"])
+    output_path = Path(spec["output_path"])
+    schema_path = Path(spec["schema_path"])
+    result_base = spec["result_base"]
+    ack_base = spec["ack_base"]
+    child: subprocess.Popen[str] | None = None
+
+    def finish_interrupted(signum: int, _frame: Any) -> None:
+        nonlocal child
+        if child is not None and child.poll() is None:
+            child.terminate()
+            try:
+                child.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait(timeout=5)
+        create_terminal_result(
+            result_path,
+            result_base,
+            "needs_coordinator",
+            f"agent invocation interrupted by signal {signum}; do not replay this request ID",
+            [str(spec_path)],
+            agent_returncode=128 + signum,
+        )
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGTERM, finish_interrupted)
+    signal.signal(signal.SIGINT, finish_interrupted)
+    deadline = time.monotonic() + int(spec.get("gate_timeout", 120))
+    while not gate_path.exists():
+        if time.monotonic() >= deadline:
+            return 2
+        time.sleep(0.1)
+
+    root = Path(spec["root"])
+    manifest = load_manifest(root)
+    authority_lock = authority_lock_path(manifest)
+    with authority_lock.open("a+", encoding="utf-8") as lock:
+        # Keep the shared lock for the complete worker turn. A close or higher
+        # epoch takes the exclusive lock and cannot return while stale Codex
+        # work is still executing.
+        fcntl.flock(lock, fcntl.LOCK_SH)
+        try:
+            validate_active_authority(root, manifest)
+        except ValueError:
+            create_terminal_result(
+                result_path,
+                result_base,
+                "needs_coordinator",
+                "agent bus was superseded before Codex spawn",
+                [str(spec_path)],
+            )
+            return 0
+        if (root / "terminal.json").exists():
+            create_terminal_result(
+                result_path,
+                result_base,
+                "needs_coordinator",
+                "agent bus closed before Codex spawn",
+                [str(spec_path)],
+            )
+            return 0
+        started_at = timestamp()
+        child = subprocess.Popen(
+            [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                "_codex-launcher",
+                "--spec",
+                str(spec_path),
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=spec["workdir"],
+        )
+        identity_deadline = time.monotonic() + 5
+        started_path = Path(spec["started_path"])
+        while not started_path.exists() and time.monotonic() < identity_deadline:
+            if child.poll() is not None:
+                break
+            time.sleep(0.05)
+        if not started_path.exists():
+            child.terminate()
+            try:
+                child.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait(timeout=10)
+            create_terminal_result(
+                result_path,
+                result_base,
+                "needs_coordinator",
+                "could not establish Codex process identity",
+                [str(spec_path)],
+            )
+            return 0
+        started = read_json(started_path)
+        if (
+            int(started.get("codex_pid", -1)) != child.pid
+            or started.get("codex_start_token") != process_start_token(child.pid)
+            or int(started.get("process_group", -1)) != os.getpgrp()
+        ):
+            child.terminate()
+            child.wait(timeout=10)
+            create_terminal_result(
+                result_path,
+                result_base,
+                "needs_coordinator",
+                "Codex launcher identity did not match the helper process group",
+                [str(started_path)],
+            )
+            return 0
+        atomic_create_json(
+            Path(spec["codex_gate_path"]), {"open": True, "created_at": timestamp()}
+        )
+        atomic_create_json(
+            ack_path, {**ack_base, "status": "accepted", "created_at": timestamp()}
+        )
+        try:
+            returncode = child.wait(timeout=int(spec["task_timeout"]))
+            stdout_path = Path(spec["stdout_path"])
+            stdout = (
+                stdout_path.read_text(encoding="utf-8", errors="replace")
+                if stdout_path.exists()
+                else ""
+            )
+            outcome = parse_agent_result(output_path, returncode, stdout)
+        except subprocess.TimeoutExpired:
+            child.terminate()
+            try:
+                child.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait(timeout=10)
+            returncode = 124
+            stdout = ""
+            outcome = {
+                "status": "needs_coordinator",
+                "summary": f"agent invocation exceeded {spec['task_timeout']}s; do not replay this request ID",
+                "evidence_paths": [],
+            }
+        create_terminal_result(
+            result_path,
+            result_base,
+            outcome["status"],
+            outcome["summary"],
+            outcome["evidence_paths"],
+            agent_returncode=returncode,
+            agent_started_at=started_at,
+            agent_finished_at=timestamp(),
+            agent_output_tail=stdout[-4000:],
+        )
+    return 0
+
+
+def process_request(
+    root: Path,
+    manifest: dict[str, Any],
+    node: str,
+    request_path: Path,
+    thread_id: str,
+    session_path: Path,
+    codex_path: str,
+    workdir: Path,
+    task_timeout: int,
+    quiet_seconds: int,
+    idle_timeout: int,
+) -> None:
+    request = read_json(request_path)
+    request_id = str(request.get("request_id") or request_path.stem)
+    claim_path = root / "claims" / node / f"{request_id}.json"
+    ack_path = root / "acks" / node / f"{request_id}.json"
+    result_path = root / "results" / node / f"{request_id}.json"
+    invocation_path = root / "invocations" / node / f"{request_id}.json"
+    if result_path.exists():
+        return
+    problem = validate_request(request, manifest, node)
+    if problem:
+        atomic_create_json(
+            ack_path,
+            worker_record(manifest, node, request, status="rejected", reason=problem),
+        )
+        atomic_create_json(
+            result_path,
+            worker_record(
+                manifest,
+                node,
+                request,
+                status="failed",
+                summary=f"request rejected: {problem}",
+                evidence_paths=[str(request_path)],
+            ),
+        )
+        return
+    claim = read_json(claim_path) if claim_path.exists() else None
+    if claim is not None and not invocation_path.exists():
+        if float(claim.get("lease_expires_unix", 0)) > time.time():
+            return
+    claim = worker_record(
+        manifest,
+        node,
+        request,
+        status="claimed",
+        dispatcher_pid=os.getpid(),
+        dispatcher_start_token=process_start_token(os.getpid()),
+        lease_expires_unix=time.time() + 60,
+    )
+    if claim_path.exists():
+        atomic_replace_json(claim_path, claim)
+    elif not atomic_create_json(claim_path, claim):
+        return
+
+    if not invocation_path.exists():
+        idle_deadline = time.monotonic() + idle_timeout
+        while not thread_idle(session_path, quiet_seconds):
+            heartbeat_existing_state(root, node, "waiting-for-thread-idle", request_id)
+            try:
+                validate_active_authority(root, manifest)
+            except ValueError:
+                create_terminal_result(
+                    result_path,
+                    worker_record(manifest, node, request),
+                    "needs_coordinator",
+                    "agent bus was superseded before delivery",
+                    [str(request_path)],
+                )
+                return
+            if (root / "terminal.json").exists():
+                create_terminal_result(
+                    result_path,
+                    worker_record(manifest, node, request),
+                    "needs_coordinator",
+                    "agent bus closed before delivery",
+                    [str(request_path)],
+                )
+                return
+            if time.monotonic() >= idle_deadline:
+                create_terminal_result(
+                    result_path,
+                    worker_record(manifest, node, request),
+                    "needs_coordinator",
+                    f"worker thread did not become idle within {idle_timeout}s",
+                    [str(session_path)],
+                )
+                return
+            time.sleep(2)
+
+    output_dir = root / "dispatcher" / node / "agent-results"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"{request_id}.json"
+    schema_path = root / "dispatcher" / node / "agent-result-schema.json"
+    write_output_schema(schema_path)
+    control_lock_path = worker_control_lock_path(root, node)
+    with control_lock_path.open("a+", encoding="utf-8") as control_lock:
+        # Stop owns this lock exclusively while publishing its intent. No
+        # helper can be created or gated after stop begins.
+        fcntl.flock(control_lock, fcntl.LOCK_SH)
+        try:
+            validate_active_authority(root, manifest)
+        except ValueError:
+            create_terminal_result(
+                result_path,
+                worker_record(manifest, node, request),
+                "needs_coordinator",
+                "agent bus was superseded before delivery",
+                [str(request_path)],
+            )
+            return
+        if (root / "terminal.json").exists() or worker_stop_path(root, node).exists():
+            create_terminal_result(
+                result_path,
+                worker_record(manifest, node, request),
+                "needs_coordinator",
+                "agent bus or worker dispatcher closed before delivery",
+                [str(request_path)],
+            )
+            return
+        if not invocation_path.exists():
+            invocation_id = uuid.uuid4().hex
+            invocation_dir = root / "dispatcher" / node / "invocations" / request_id
+            invocation_dir.mkdir(parents=True, exist_ok=True)
+            spec_path = invocation_dir / f"{invocation_id}.spec.json"
+            gate_path = invocation_dir / f"{invocation_id}.helper-gate.json"
+            codex_gate_path = invocation_dir / f"{invocation_id}.codex-gate.json"
+            started_path = invocation_dir / f"{invocation_id}.started.json"
+            helper_log_path = invocation_dir / f"{invocation_id}.helper.log"
+            prompt_path = invocation_dir / f"{invocation_id}.prompt.txt"
+            stdout_path = invocation_dir / f"{invocation_id}.codex.log"
+            prompt_path.write_text(
+                request_prompt(request_path, request, root), encoding="utf-8"
+            )
+            spec = {
+                "schema_version": SCHEMA_VERSION,
+                "request_id": request_id,
+                "root": str(root.resolve()),
+                "authority_lock_path": str(authority_lock_path(manifest)),
+                "codex_path": codex_path,
+                "thread_id": thread_id,
+                "workdir": str(workdir),
+                "task_timeout": task_timeout,
+                "gate_timeout": 120,
+                "gate_path": str(gate_path),
+                "codex_gate_path": str(codex_gate_path),
+                "started_path": str(started_path),
+                "prompt_path": str(prompt_path),
+                "stdout_path": str(stdout_path),
+                "output_path": str(output_path),
+                "schema_path": str(schema_path),
+                "ack_path": str(ack_path),
+                "result_path": str(result_path),
+                "ack_base": worker_record(manifest, node, request),
+                "result_base": worker_record(manifest, node, request),
+            }
+            atomic_create_json(spec_path, spec)
+            with helper_log_path.open("a", encoding="utf-8") as helper_log:
+                helper = subprocess.Popen(
+                    [
+                        sys.executable,
+                        str(Path(__file__).resolve()),
+                        "_resume-helper",
+                        "--spec",
+                        str(spec_path),
+                    ],
+                    stdin=subprocess.DEVNULL,
+                    stdout=helper_log,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                    close_fds=True,
+                )
+            _BACKGROUND_PROCESSES[helper.pid] = helper
+            helper_start_token = None
+            token_deadline = time.monotonic() + 5
+            while helper_start_token is None and time.monotonic() < token_deadline:
+                helper_start_token = process_start_token(helper.pid)
+                if helper_start_token is None:
+                    time.sleep(0.05)
+            if helper_start_token is None:
+                helper.terminate()
+                raise RuntimeError("could not establish agent helper process identity")
+            invocation = {
+                "schema_version": SCHEMA_VERSION,
+                "request_id": request_id,
+                "spec_path": str(spec_path),
+                "gate_path": str(gate_path),
+                "started_path": str(started_path),
+                "helper_log_path": str(helper_log_path),
+                "helper_pid": helper.pid,
+                "helper_pgid": helper.pid,
+                "helper_start_token": helper_start_token,
+                "created_at": timestamp(),
+            }
+            identity_deadline = time.monotonic() + 5
+            while (
+                not helper_process_matches(invocation)
+                and time.monotonic() < identity_deadline
+            ):
+                if not process_alive(helper.pid):
+                    break
+                time.sleep(0.05)
+            if not helper_process_matches(invocation):
+                helper.terminate()
+                raise RuntimeError("agent helper did not establish the expected command identity")
+            atomic_create_json(invocation_path, invocation)
+            atomic_create_json(gate_path, {"open": True, "created_at": timestamp()})
+        else:
+            invocation = read_json(invocation_path)
+            if helper_process_matches(invocation):
+                atomic_create_json(Path(invocation["gate_path"]), {"open": True})
+            elif not result_path.exists():
+                terminate_invocation(invocation)
+                create_terminal_result(
+                    result_path,
+                    worker_record(manifest, node, request),
+                    "needs_coordinator",
+                    "agent helper disappeared without a terminal result; do not replay this request ID",
+                    [str(invocation_path)],
+                )
+                return
+
+    wait_deadline = time.monotonic() + task_timeout + 180
+    while not result_path.exists():
+        heartbeat_existing_state(root, node, "agent-active", request_id)
+        try:
+            validate_active_authority(root, manifest)
+        except ValueError:
+            terminate_invocation(invocation)
+        if not helper_process_matches(invocation):
+            terminate_invocation(invocation)
+            create_terminal_result(
+                result_path,
+                worker_record(manifest, node, request),
+                "needs_coordinator",
+                "agent helper exited without a terminal result; do not replay this request ID",
+                [str(invocation_path)],
+            )
+            break
+        if time.monotonic() >= wait_deadline:
+            terminate_invocation(invocation)
+            create_terminal_result(
+                result_path,
+                worker_record(manifest, node, request),
+                "needs_coordinator",
+                "agent helper exceeded its bounded lifecycle; do not replay this request ID",
+                [str(invocation_path)],
+            )
+            break
+        time.sleep(1)
+
+
+def dispatcher_state_path(root: Path, node: str) -> Path:
+    return root / "dispatcher" / node / "state.json"
+
+
+def update_dispatcher_state(
+    root: Path, node: str, status: str, **values: Any
+) -> None:
+    atomic_replace_json(
+        dispatcher_state_path(root, node),
+        {
+            "schema_version": SCHEMA_VERSION,
+            "node": node,
+            "hostname": short_hostname(),
+            "pid": os.getpid(),
+            "process_start_token": process_start_token(os.getpid()),
+            "status": status,
+            "heartbeat_at": timestamp(),
+            **values,
+        },
+    )
+
+
+def dispatch_pending_once(
+    root: Path,
+    manifest: dict[str, Any],
+    node: str,
+    thread_id: str,
+    session_path: Path,
+    codex_path: str,
+    workdir: Path,
+    task_timeout: int,
+    quiet_seconds: int,
+    idle_timeout: int,
+) -> None:
+    inbox = root / "inbox" / node
+    for request_path in sorted(inbox.glob("*.json")):
+        process_request(
+            root,
+            manifest,
+            node,
+            request_path,
+            thread_id,
+            session_path,
+            codex_path,
+            workdir,
+            task_timeout,
+            quiet_seconds,
+            idle_timeout,
+        )
+
+
+def run_dispatcher(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    session_path = (
+        Path(args.session_path).expanduser().resolve()
+        if args.session_path
+        else discover_session_path(args.thread_id)
+    )
+    if session_path is None or not session_path.exists():
+        raise FileNotFoundError(f"Codex transcript not found for {args.thread_id}")
+    workdir = Path(args.workdir).expanduser().resolve()
+    if not workdir.exists():
+        raise FileNotFoundError(workdir)
+    state_values = {
+        "instance_id": args.instance_id,
+        "thread_id": args.thread_id,
+        "session_path": str(session_path),
+        "workdir": str(workdir),
+        "codex_path": args.codex_path,
+        "poll_interval": args.poll_interval,
+        "task_timeout": args.task_timeout,
+        "thread_quiet_seconds": args.thread_quiet_seconds,
+        "thread_idle_timeout": args.thread_idle_timeout,
+    }
+    lock_path = root / "dispatcher" / args.node / "dispatcher.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError(f"dispatcher already running for {args.node}")
+        while not manifest_path(root).exists():
+            update_dispatcher_state(
+                root,
+                args.node,
+                "waiting-for-manifest",
+                **state_values,
+            )
+            time.sleep(args.poll_interval)
+        manifest = load_manifest(root)
+        if args.node == manifest["coordinator_node"]:
+            raise ValueError("do not attach a dispatcher to the active coordinator Goal")
+        validate_local_role(manifest, args.node)
+        update_dispatcher_state(
+            root,
+            args.node,
+            "watching",
+            **state_values,
+        )
+        try:
+            while True:
+                manifest = load_manifest(root)
+                try:
+                    validate_active_authority(root, manifest)
+                except ValueError:
+                    update_dispatcher_state(
+                        root,
+                        args.node,
+                        "superseded",
+                        **state_values,
+                    )
+                    return 0
+                if (root / "terminal.json").exists():
+                    break
+                update_dispatcher_state(
+                    root,
+                    args.node,
+                    "watching",
+                    **state_values,
+                )
+                dispatch_pending_once(
+                    root,
+                    manifest,
+                    args.node,
+                    args.thread_id,
+                    session_path,
+                    args.codex_path,
+                    workdir,
+                        args.task_timeout,
+                        args.thread_quiet_seconds,
+                        args.thread_idle_timeout,
+                    )
+                time.sleep(args.poll_interval)
+        finally:
+            current_status = "stopped"
+            state_path = dispatcher_state_path(root, args.node)
+            if state_path.exists() and read_json(state_path).get("status") == "superseded":
+                current_status = "superseded"
+            update_dispatcher_state(
+                root, args.node, current_status, **state_values
+            )
+
+
+def start_dispatcher(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    state_path = dispatcher_state_path(root, args.node)
+    requested_config = {
+        "thread_id": args.thread_id,
+        "session_path": str(Path(args.session_path).expanduser().resolve())
+        if args.session_path
+        else str(discover_session_path(args.thread_id)),
+        "workdir": str(Path(args.workdir).expanduser().resolve()),
+        "codex_path": args.codex_path,
+        "poll_interval": args.poll_interval,
+        "task_timeout": args.task_timeout,
+        "thread_quiet_seconds": args.thread_quiet_seconds,
+        "thread_idle_timeout": args.thread_idle_timeout,
+    }
+    if state_path.exists():
+        state = read_json(state_path)
+        if state.get("status") in ACTIVE_DISPATCHER_STATES and (
+            dispatcher_process_matches(state, root, args.node)
+        ):
+            mismatched = [
+                key for key, value in requested_config.items() if state.get(key) != value
+            ]
+            if mismatched:
+                raise ValueError(
+                    "existing dispatcher has different configuration: "
+                    + ", ".join(mismatched)
+                )
+            print(state_path)
+            return 0
+    control_path = worker_control_lock_path(root, args.node)
+    with control_path.open("a+", encoding="utf-8") as control_lock:
+        fcntl.flock(control_lock, fcntl.LOCK_EX)
+        # A stop intent is scoped to the previous dispatcher instance. It is
+        # cleared only after proving that instance is no longer alive.
+        worker_stop_path(root, args.node).unlink(missing_ok=True)
+    log_path = root / "dispatcher" / args.node / "dispatcher.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    instance_id = uuid.uuid4().hex
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "run",
+        "--root",
+        str(root),
+        "--node",
+        args.node,
+        "--instance-id",
+        instance_id,
+        "--thread-id",
+        args.thread_id,
+        "--workdir",
+        args.workdir,
+        "--codex-path",
+        args.codex_path,
+        "--poll-interval",
+        str(args.poll_interval),
+        "--task-timeout",
+        str(args.task_timeout),
+        "--thread-quiet-seconds",
+        str(args.thread_quiet_seconds),
+        "--thread-idle-timeout",
+        str(args.thread_idle_timeout),
+    ]
+    if args.session_path:
+        command.extend(["--session-path", args.session_path])
+    with log_path.open("a", encoding="utf-8") as log:
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            close_fds=True,
+        )
+    _BACKGROUND_PROCESSES[process.pid] = process
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        if state_path.exists():
+            state = read_json(state_path)
+            if state.get("status") in ACTIVE_DISPATCHER_STATES and (
+                state.get("pid") == process.pid
+                and state.get("instance_id") == instance_id
+            ):
+                print(state_path)
+                return 0
+        if process.poll() is not None:
+            raise RuntimeError(f"dispatcher exited; inspect {log_path}")
+        time.sleep(0.2)
+    raise TimeoutError(f"dispatcher did not become ready; inspect {log_path}")
+
+
+def status_dispatcher(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    path = dispatcher_state_path(root, args.node)
+    state = read_json(path)
+    state["process_alive"] = dispatcher_process_matches(state, root, args.node)
+    print(json.dumps(state, indent=2, sort_keys=True))
+    return 0 if state["process_alive"] else 1
+
+
+def stop_dispatcher(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    path = dispatcher_state_path(root, args.node)
+    state = read_json(path)
+    pid = int(state.get("pid", -1))
+    instance_id = state.get("instance_id")
+    control_path = worker_control_lock_path(root, args.node)
+    with control_path.open("a+", encoding="utf-8") as control_lock:
+        # Serialize against helper creation, publish stop intent first, then
+        # stop the dispatcher and terminate every invocation it could have
+        # created. This removes the scan-before-spawn race.
+        fcntl.flock(control_lock, fcntl.LOCK_EX)
+        atomic_replace_json(
+            worker_stop_path(root, args.node),
+            {
+                "schema_version": SCHEMA_VERSION,
+                "node": args.node,
+                "instance_id": instance_id,
+                "created_at": timestamp(),
+            },
+        )
+        if dispatcher_process_matches(state, root, args.node):
+            os.kill(pid, signal.SIGTERM)
+            deadline = time.monotonic() + args.timeout
+            while process_alive(pid) and time.monotonic() < deadline:
+                time.sleep(0.2)
+            if process_alive(pid):
+                os.kill(pid, signal.SIGKILL)
+                deadline = time.monotonic() + args.timeout
+                while process_alive(pid) and time.monotonic() < deadline:
+                    time.sleep(0.2)
+            if process_alive(pid):
+                raise TimeoutError(f"dispatcher {pid} did not stop")
+        for invocation_path in sorted(
+            (root / "invocations" / args.node).glob("*.json")
+        ):
+            invocation = read_json(invocation_path)
+            request_id = str(invocation.get("request_id"))
+            result_path = root / "results" / args.node / f"{request_id}.json"
+            if result_path.exists():
+                continue
+            terminate_invocation(invocation, timeout=args.timeout)
+            if not result_path.exists():
+                spec = read_json(Path(invocation["spec_path"]))
+                create_terminal_result(
+                    result_path,
+                    spec["result_base"],
+                    "needs_coordinator",
+                    "dispatcher stop interrupted the agent invocation; do not replay this request ID",
+                    [str(invocation_path)],
+                )
+    current = read_json(path)
+    if current.get("instance_id") == instance_id:
+        current.update({"status": "stopped", "stopped_at": timestamp()})
+        atomic_replace_json(path, current)
+    print(path)
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    init = subparsers.add_parser("init", help="publish an immutable bus manifest")
+    init.add_argument("--root", required=True)
+    init.add_argument("--authority-root", required=True)
+    init.add_argument("--experiment-id", required=True)
+    init.add_argument("--attempt", required=True)
+    init.add_argument("--launch-nonce", required=True)
+    init.add_argument("--science-contract-hash", required=True)
+    init.add_argument("--fencing-epoch", type=int, required=True)
+    init.add_argument("--coordinator-node", default="node0")
+    init.add_argument("--coordinator-thread-id", required=True)
+    init.add_argument("--node", action="append", type=parse_node, required=True)
+    init.add_argument("--allow-host-mismatch", action="store_true", help=argparse.SUPPRESS)
+    init.set_defaults(function=initialize_bus)
+
+    publish = subparsers.add_parser("publish", help="publish one coordinator request")
+    publish.add_argument("--root", required=True)
+    publish.add_argument("--target", required=True)
+    publish.add_argument("--action", required=True)
+    message = publish.add_mutually_exclusive_group(required=True)
+    message.add_argument("--message")
+    message.add_argument("--message-file")
+    publish.add_argument("--completion-predicate", required=True)
+    publish.add_argument("--evidence-path", action="append", default=[])
+    publish.add_argument("--request-id")
+    publish.set_defaults(function=publish_request)
+
+    close = subparsers.add_parser("close", help="close the bus after the objective ends")
+    close.add_argument("--root", required=True)
+    close.add_argument("--status", choices=("completed", "abandoned"), required=True)
+    close.add_argument("--summary", required=True)
+    close.set_defaults(function=close_bus)
+
+    for command in ("start", "run"):
+        dispatch = subparsers.add_parser(command)
+        dispatch.add_argument("--root", required=True)
+        dispatch.add_argument("--node", required=True)
+        dispatch.add_argument("--thread-id", required=True)
+        dispatch.add_argument("--instance-id", default="foreground")
+        dispatch.add_argument("--session-path")
+        dispatch.add_argument("--workdir", required=True)
+        dispatch.add_argument("--codex-path", default="codex")
+        dispatch.add_argument("--poll-interval", type=float, default=2.0)
+        dispatch.add_argument("--task-timeout", type=int, default=7200)
+        dispatch.add_argument("--thread-quiet-seconds", type=int, default=5)
+        dispatch.add_argument("--thread-idle-timeout", type=int, default=21600)
+        dispatch.set_defaults(function=start_dispatcher if command == "start" else run_dispatcher)
+
+    status = subparsers.add_parser("status")
+    status.add_argument("--root", required=True)
+    status.add_argument("--node", required=True)
+    status.set_defaults(function=status_dispatcher)
+
+    stop = subparsers.add_parser("stop")
+    stop.add_argument("--root", required=True)
+    stop.add_argument("--node", required=True)
+    stop.add_argument("--timeout", type=int, default=15)
+    stop.set_defaults(function=stop_dispatcher)
+
+    helper = subparsers.add_parser("_resume-helper", help=argparse.SUPPRESS)
+    helper.add_argument("--spec", required=True)
+    helper.set_defaults(function=resume_helper)
+
+    launcher = subparsers.add_parser("_codex-launcher", help=argparse.SUPPRESS)
+    launcher.add_argument("--spec", required=True)
+    launcher.set_defaults(function=codex_launcher)
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    try:
+        return int(args.function(args))
+    except (OSError, ValueError, RuntimeError, TimeoutError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

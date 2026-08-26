@@ -135,11 +135,21 @@ coordinator relay; shared-file changes cannot wake a blocked Goal.
 Archive compact coordination metadata after completion rather than deleting
 formal experiment lineage.
 
-Do not assume the generic long-task watcher is a repeated inbox dispatcher. A
-production worker dispatcher must be separately reviewed and tested for schema
-validation, sender/target authorization, request-ID deduplication, and repeated
-delivery after each bounded agent invocation exits. Until then, use a one-shot
-relay for one selected incident and let supervisors own deterministic retries.
+Use the `long-task-relay` skill's `shared_agent_dispatcher.py` when Node 0 must
+send repeated bounded requests to ordinary worker threads. Each worker starts
+one token-free dispatcher with its exact `$CODEX_THREAD_ID`, verifies its
+heartbeat, and ends the bootstrap turn. The dispatcher validates the immutable
+attempt manifest, resumes the worker for one request, writes ACK/result records,
+and returns to waiting. Thus Node 0 can issue later requests without a human
+reopening Nodes 1--3. The dispatcher does not make training decisions or run
+request text as shell code.
+
+This is command-and-report interaction, not unrestricted peer chat. Node 0 is
+the only command publisher; workers report evidence in their result records.
+Worker-to-worker requests are forbidden. If a worker needs another node to act,
+it reports `needs_coordinator`, and Node 0 publishes a new request to that node.
+Do not rely on a shared Markdown file or an active worker Goal as notification.
+Do not attach a dispatcher to Node 0 while its Goal owns recovery.
 
 ## Durable state machine
 

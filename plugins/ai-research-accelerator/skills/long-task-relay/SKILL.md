@@ -64,6 +64,9 @@ an idle conversation that can be resumed only when judgment is needed.
    - `command` invokes an explicit resume command with the prompt on stdin;
    - `tui-send-keys` injects into a verified Codex/agent tmux pane;
    - `inbox` writes the event prompt without invoking a model.
+   - for repeated coordinator-to-worker requests, use
+     [scripts/shared_agent_dispatcher.py](scripts/shared_agent_dispatcher.py),
+     not a fixed one-shot watcher.
 4. Arm the watcher with
    [scripts/long_task_relay.py](scripts/long_task_relay.py), verify its state
    and heartbeat, then end the agent turn.
@@ -92,6 +95,52 @@ constructing a production relay or a remote-agent prompt.
 - A resumed command cannot directly acknowledge or re-arm the watcher that is
   synchronously waiting for it to exit. Use `defer-finalize`; direct
   `acknowledge`/`rearm` are for an already stopped watcher.
+
+## Shared-Agent Dispatcher
+
+For an explicit multi-node coordinator-worker workflow, Node 0 may remain in
+Goal mode while each worker uses an ordinary Codex thread plus a token-free
+dispatcher. Node 0 atomically publishes a bounded structured request; the
+dispatcher validates its sender, target, attempt, nonce, contract hash, and
+fencing epoch before running `codex exec resume THREAD_ID -`. It writes an ACK
+and terminal result, deduplicates request IDs, then returns to filesystem
+waiting without consuming model tokens.
+
+The worker bootstrap must start the dispatcher from its own ordinary thread
+using `$CODEX_THREAD_ID`, verify `status=watching`, and then end the turn. Do
+not start a worker Goal and do not attach this dispatcher to the coordinator
+Goal. Use the immutable attempt-specific manifest created by the coordinator;
+never reuse a dispatcher root across attempts.
+
+Workers may start before Node 0: the detached dispatcher reports
+`waiting-for-manifest` and changes to `watching` after the matching immutable
+manifest appears. The worker agent itself must still end its turn immediately.
+
+```bash
+python shared_agent_dispatcher.py init \
+  --root "$ATTEMPT_ROOT" --authority-root "$COORDINATION_FAMILY_ROOT" \
+  --experiment-id "$EXP" --attempt A2 \
+  --launch-nonce "$NONCE" --science-contract-hash "$CONTRACT_SHA" \
+  --fencing-epoch 2 --coordinator-thread-id "$CODEX_THREAD_ID" \
+  --node node0=HOST0 --node node1=HOST1
+
+python shared_agent_dispatcher.py start \
+  --root "$ATTEMPT_ROOT" --node node1 \
+  --thread-id "$CODEX_THREAD_ID" --workdir "$REPO"
+
+python shared_agent_dispatcher.py publish \
+  --root "$ATTEMPT_ROOT" --target node1 --action start-node \
+  --message-file /path/to/request.txt \
+  --completion-predicate 'node1 writes ready or failure evidence'
+```
+
+The dispatcher treats accepted-but-incomplete work conservatively: it records
+`needs_coordinator` and requires a new request ID rather than replaying an
+unknown side effect. It does not execute request text as shell code; an idle
+worker agent interprets one bounded request under the frozen contract.
+After first-work success or an abandoned campaign, Node 0 runs `close`; worker
+dispatchers observe the immutable terminal record and exit without another
+agent wake.
 
 ## Minimal Example
 

@@ -38,13 +38,46 @@ coordinator and is never an automatic task retry. After `failed` or
 report to the coordinator rather than issuing commands directly to one another.
 
 The base `long_task_relay.py` watcher observes fixed markers, logs, progress,
-PIDs, and tmux state and handles one event per generation. It is not by itself
-a repeated structured-inbox consumer. Do not claim this workflow is available
-until the chosen dispatcher validates coordinator identity, target node,
-attempt, nonce, scientific-contract hash, fencing epoch, and request ID; tracks
-claims, acknowledgements, results, and processed request IDs; distinguishes
-wake retry from task retry; and has an end-to-end crash-recovery test. A fixed
-one-shot relay may still wake an agent for one already-selected request.
+PIDs, and tmux state and handles one event per generation. It is not a repeated
+structured-inbox consumer. Use `scripts/shared_agent_dispatcher.py` for that
+role. It validates coordinator identity, target node, attempt, nonce,
+scientific-contract hash, fencing epoch, and request ID; tracks claims,
+acknowledgements, and terminal results; and repeatedly resumes the exact idle
+worker thread. A fixed one-shot relay remains appropriate for one already
+selected event outside a coordinator-worker message bus.
+
+The dispatcher uses an immutable attempt-local `agent-bus-manifest.json` plus
+an authority-root `active-agent-bus.json` advanced under a coordinator lock.
+Workers and publishers re-read the active record, so a higher fencing epoch
+stops superseded dispatchers and rejects old publishers. Node
+0's hostname and Goal thread ID are frozen in that manifest; only that thread
+may publish, and it cannot publish to itself. A worker owns only its
+claim, ACK, result, and dispatcher state paths. An accepted request that loses
+its agent invocation is terminally reported as `needs_coordinator`; automatic
+re-execution is forbidden because its side effects may already exist. Node 0
+must inspect evidence and issue a new request ID. This conservative policy is
+at-most-once for bounded tasks after acceptance, while publication and inbox
+observation remain repeatable and deduplicated.
+
+Before delivery, a renewable claim lease permits recovery only while no agent
+invocation record exists. Each actual resume runs under a gate-controlled
+helper process group whose PID start-token is persisted before the gate opens.
+The launcher publishes its own PID identity before `exec` and carries a shared
+authority-lock descriptor into the actual Codex process. Thus epoch takeover
+and close are quiescent even if the helper is killed. The helper writes ACK
+only after the launcher identity is durable and writes the terminal result
+itself. Dispatcher restart therefore observes the same helper/result rather
+than replaying work; stop terminates the full helper group and records
+`needs_coordinator`.
+
+The dispatcher resumes a worker only after its JSONL transcript records
+`task_complete` and remains quiet. The resumed turn is constrained by a JSON
+result schema (`succeeded`, `failed`, or `needs_coordinator`), and its terminal
+record is written by the dispatcher even when the agent process fails. The
+dispatcher itself is a detached, token-free process with an atomic heartbeat;
+future requests therefore do not require a human to reopen the worker Codex.
+The coordinator closes the bus with one immutable `terminal.json`; dispatchers
+stop mechanically after their current bounded invocation returns.
 
 ## Architecture
 
@@ -137,6 +170,11 @@ safe fallback when exact-session resume is unavailable.
   context in the event prompt.
 - Use `test-event` before unattended operation when delivery is critical.
 - Never configure an unbounded wake retry count.
+- For shared-agent dispatch, create one immutable manifest per attempt, record
+  each worker's exact `$CODEX_THREAD_ID`, verify the transcript path, and run
+  `status` once before the bootstrap turn exits.
+- Publish only bounded node-local requests. Source changes, asset publication,
+  attempt advancement, and scientific decisions stay with the coordinator.
 
 ## CLI Operations
 
