@@ -215,3 +215,15 @@
   the default shared-storage collaboration pattern; workers no longer use Goal
   mode or poll shared files with model tokens.
 - Raised the plugin version to `0.3.6`.
+
+## 2026-08-26 - Tighten first-mile worker bootstrap acceptance
+
+- A real four-node handoff exposed a bootstrap paradox: worker prompts ran
+  before the shared tool checkout existed, accepted a transient waiter PID,
+  and ended without any dispatcher. The later fixed script could not wake the
+  worker because the missing dispatcher was itself the wake mechanism.
+- The relay and multi-node skills now require coordinator-first publication of
+  the tool, manifest, and final node scripts; workers must execute those scripts
+  and prove an exact live dispatcher in `watching` state before returning.
+- Added a mandatory two-round harmless request/response smoke before training
+  may depend on the agent bus. Raised the plugin version to `0.3.7`.

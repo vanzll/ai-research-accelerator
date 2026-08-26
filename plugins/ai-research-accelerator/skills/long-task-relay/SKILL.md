@@ -112,6 +112,16 @@ not start a worker Goal and do not attach this dispatcher to the coordinator
 Goal. Use the immutable attempt-specific manifest created by the coordinator;
 never reuse a dispatcher root across attempts.
 
+Treat this initial worker wake path as a separate first-mile bootstrap. Before
+the user sends worker prompts, the coordinator must publish the exact tool
+checkout, manifest, and final node-specific bootstrap scripts. A worker prompt
+must execute that existing script, not merely create a waiter for future code.
+It may end only after `status` proves the exact dispatcher PID/thread/config is
+alive with `status=watching`. A transient bootstrap PID, tmux pane, log line, or
+`waiting for tool` record is not acceptance. The bus cannot repair its own
+missing dispatcher, so bootstrap failure must remain in the foreground worker
+turn until fixed or explicitly reported.
+
 Workers may start before Node 0: the detached dispatcher reports
 `waiting-for-manifest` and changes to `watching` after the matching immutable
 manifest appears. The worker agent itself must still end its turn immediately.

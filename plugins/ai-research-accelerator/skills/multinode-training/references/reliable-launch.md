@@ -144,6 +144,15 @@ and returns to waiting. Thus Node 0 can issue later requests without a human
 reopening Nodes 1--3. The dispatcher does not make training decisions or run
 request text as shell code.
 
+Bootstrap this control plane in two explicit phases. First, the coordinator
+atomically prepares the pinned dispatcher checkout, immutable bus manifest, and
+final host-specific launch scripts. Only then does the user send each ordinary
+worker prompt, which must execute its script and verify the exact dispatcher
+state as `watching` with a matching live process. Never accept `bootstrap
+started`, `tool not ready`, or a momentarily live shell as worker readiness.
+Before relying on the bus for training, run two harmless publish/resume/result
+round trips per worker; this proves both first delivery and re-arming.
+
 This is command-and-report interaction, not unrestricted peer chat. Node 0 is
 the only command publisher; workers report evidence in their result records.
 Worker-to-worker requests are forbidden. If a worker needs another node to act,
