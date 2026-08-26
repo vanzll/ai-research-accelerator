@@ -12,193 +12,23 @@ The coordinator is not allowed to report startup success until every expected no
 
 ## AI-agent collaboration over shared storage
 
-Use agents for diagnosis and bounded repair, and mechanical supervisors for
-waiting and state transitions. Assign one coordinator agent as the only writer
-of shared source, run contracts, asset manifests, and retry manifests. Worker
-agents execute node-local stages, preserve evidence, and submit diagnoses or
-requests. They may repair node-local environment or process-control defects
-only when the repair cannot change training behavior. They must not create
-divergent shared code or independently alter the experiment.
+Use the `shared-filesystem-agent-coordination` skill for the general Agent Bus,
+first-mile bootstrap, coordinator/worker modes, message protocol, exact-thread
+wakeups, monitoring, and repair loop. The training integration adds these
+constraints:
 
-Use a star topology unless the workflow explicitly requires distributed
-consensus: workers report observations and repair requests to the coordinator,
-and only the coordinator issues cross-node instructions. Workers do not command
-one another. This keeps one owner for shared code and global transitions while
-still allowing every node to report independent evidence.
-
-Before granting repair authority, publish an immutable scientific contract and
-hash covering at least the algorithm/objective, model and reward identities,
-data and prompt protocol, batch/group and optimizer semantics, precision,
-learning rate and optimizer, sampling/denoising settings, parallel mesh,
-evaluation, and checkpoint protocol. Operational repairs may change launcher
-or compatibility code only when this hash and those semantics remain fixed.
-Every shared repair must add a regression test, produce a new commit, and use
-a new attempt number and nonce. Changing attempt lineage is recovery metadata,
-not a scientific change. If an agent cannot prove that a proposed repair is
-semantics-preserving, it must request user approval instead of retrying.
-
-Do not use one concurrently edited progress document as the control plane.
-Keep a human-readable summary if useful, but use one-writer structured paths,
-for example:
-
-```text
-coordination/EXPERIMENT/
-  science-contract.json
-  coordinator.lock
-  active-attempt.json
-  attempts/A5/manifest.json
-  attempts/A5/coordinator-owner.json
-  attempts/A5/status/node0.json
-  attempts/A5/status/node1.json
-  attempts/A5/events/node0/000001-ready.json
-  attempts/A5/events/node1/000004-failed.json
-  attempts/A5/inbox/node1/node0-REQUEST_ID.json
-  attempts/A5/claims/node1/REQUEST_ID.json
-  attempts/A5/acks/node1/REQUEST_ID.json
-  attempts/A5/results/node1/REQUEST_ID.json
-  attempts/A5/terminal.json
-  summary.md
-```
-
-Publish records by writing a temporary file, flushing it, and atomically
-renaming it into place. Events are immutable and append-only; mutable status
-files are atomically replaced by their owning node only. Include schema
-version, experiment, attempt, fencing epoch, nonce, commit,
-science-contract hash, sender, target, hostname/rank, monotonic event sequence,
-UTC timestamp, action or event type, evidence paths, completion predicate, and
-request ID where applicable. Readers reject stale or mismatched records and
-deduplicate by event/request ID. A request for another node is a new immutable
-file in that node's inbox, never an edit to the recipient's status file; the
-recipient writes a separate acknowledgement and terminal result for that
-request. Watchers may wake an agent from a validated request but must never
-execute arbitrary request text as shell code.
-
-Freeze the coordinator hostname, role, agent/session identity when available,
-and fencing epoch in the attempt manifest. A deterministic coordinator
-publisher holds an experiment-scoped exclusive lock for the active launch. Under
-that lock it atomically advances `active-attempt.json` to the new attempt,
-nonce, and monotonically increasing epoch, then writes the immutable
-attempt-local owner record. Every coordinator write carries that identity.
-Workers re-read `active-attempt.json` before accepting a request or starting a
-trainer and reject any superseded attempt or epoch, even if an old coordinator
-later resumes. There is no coordinator takeover within an attempt. If the
-publisher dies or ownership becomes ambiguous, workers fail that attempt; a
-new publisher acquires the experiment lock and creates a new attempt, nonce,
-and epoch. All coordinator publication must pass through the lock-owning
-publisher rather than writing shared control files directly from an agent. Use
-filesystem ownership or service credentials to enforce coordinator-only inbox
-publication when available; schema checks prevent accidental violations but
-are not an adversarial security boundary on a shared account.
-
-Acknowledgements are worker-owned and terminal for acceptance (`accepted` or
-`rejected`). Per-request results are also worker-owned and terminal
-(`succeeded`, `failed`, or `needs_coordinator`), reference the request ID, and
-carry compact evidence paths. The attempt-wide `terminal.json` remains a
-coordinator-owned experiment result and is not a substitute for per-request
-results.
-
-Repeated delivery is at-least-once and request processing must be idempotent.
-The dispatcher atomically writes a bounded claim before waking an agent and
-marks a request processed only after its terminal result exists. If delivery
-dies before ACK, it may redeliver the same request ID after proving the prior
-invocation is gone and the claim expires. If an accepted request loses its
-agent before a terminal result, the dispatcher emits an incomplete-request
-event and waits for the coordinator; it must not rerun the task automatically.
-A task retry after `failed` or `needs_coordinator` requires a new coordinator
-request ID, and a failed training attempt still requires new attempt lineage.
-
-The unattended repair loop is:
-
-1. workers run the coordinator's frozen attempt manifest;
-2. a failure preserves logs and emits a structured failure event;
-3. the coordinator diagnoses all node evidence and classifies the proposed
-   change as operational or scientific;
-4. for an operational bug, the coordinator adds a regression test, publishes
-   a new commit and attempt manifest, and never rewrites the failed lineage;
-5. deterministic worker supervisors consume the new manifest and perform the
-   coordinated retry; relays wake worker agents only when node-local judgment
-   or repair is required;
-6. the loop stops only after the declared first-work contract is satisfied.
-
-Do not keep worker agents polling through long quiet phases. Control ownership
-is scoped per conversation and unresolved objective: an active Goal must not
-also receive relay events for that objective, but a coordinator Goal may direct
-separate ordinary-mode worker relays. In this hybrid, the coordinator owns
-global decisions and recovery through `FIRST_WORK_VALIDATED`; supervisors own
-the mechanical first-work observation and transitions, worker relays wake only
-idle worker agents for bounded requests, and no relay targets the active
-coordinator Goal. Node 0's local worker is owned by its deterministic
-supervisor, and Node 0 operational incidents are handled directly by the
-coordinator Goal rather than a second Node 0 agent. If the coordinator reaches
-a long quiet wait, explicitly end Goal ownership and arm an ordinary
-coordinator relay; shared-file changes cannot wake a blocked Goal.
-Archive compact coordination metadata after completion rather than deleting
-formal experiment lineage.
-
-Use the `long-task-relay` skill's `shared_agent_dispatcher.py` when Node 0 must
-send repeated bounded requests to ordinary worker threads. Each worker starts
-one token-free dispatcher with its exact `$CODEX_THREAD_ID`, verifies its
-heartbeat, and ends the bootstrap turn. The dispatcher validates the immutable
-attempt manifest, resumes the worker for one request, writes ACK/result records,
-and returns to waiting. Thus Node 0 can issue later requests without a human
-reopening Nodes 1--3. The dispatcher does not make training decisions or run
-request text as shell code.
-
-Bootstrap this control plane in two explicit phases. First, the coordinator
-atomically prepares the pinned dispatcher checkout, immutable bus manifest, and
-final host-specific launch scripts. Only then does the user send each ordinary
-worker prompt. That prompt must execute the already-published script, which
-starts the dispatcher under a durable process owner independent of the agent
-turn, such as tmux, a scheduler, or a service manager; it must not merely create
-a script, start a foreground/background child tied to the turn, or wait for
-future tools. Worker acceptance is conjunctive: `state.json` exists, the
-recorded PID/start identity matches the intended dispatcher, that process is
-alive under its durable owner, and status is exactly `watching`. Never accept
-`bootstrap started`, `waiting`, `waiting-for-tool`, or a momentarily live shell
-as worker readiness.
-
-This ordering prevents a first-mile deadlock. If the worker turn exits before a
-dispatcher exists, a later coordinator repair cannot use that dispatcher to
-wake the worker that must install it. Recovery then requires an external user,
-scheduler, or already-independent bootstrap mechanism; the bus cannot bootstrap
-itself.
-Before relying on the bus for training, run two harmless publish/resume/result
-round trips per worker; this proves both first delivery and re-arming.
-
-Treat the following as distinct evidence claims:
-
-1. `AGENT_BUS_READY`: every expected worker has the exact registered host and
-   thread, a live dispatcher heartbeat, two successful harmless round trips,
-   and a final `watching` state;
-2. per-request `TASK_DISPATCHED` and `TASK_COMPLETED`: Node 0 published a real
-   bounded action, the intended worker accepted that request ID, and later
-   returned its terminal result;
-3. `NODE_LOCAL_READY` or `CLUSTER_READY`: the requested node-local services and
-   launch prerequisites produced matching attempt evidence;
-4. `TRAINING_STARTED` and `FIRST_WORK_VALIDATED`: the trainer and distributed
-   optimizer boundary produced their own immutable evidence.
-
-Do not infer a later claim from an earlier one. Request/ACK/result counts alone
-are insufficient because harmless transport tests use the same mechanism as
-real work; inspect the immutable request action and completion predicate. A
-dispatcher in `watching` with no active request is healthy and available. It
-does not mean the pipeline failed, and waiting for the coordinator to publish
-the next request is not by itself a blocked worker Goal.
-
-Monitor the bus mechanically from dispatcher heartbeats, inbox depth, claims,
-ACKs, terminal results, invocation identity, and stale/failure records. Alert
-or wake an agent only for a new actionable request, stale dispatcher, failed
-delivery, `needs_coordinator`, or declared completion. Do not wake all workers
-merely to ask for status. Preserve old failed request records, but scope health
-and completion decisions to the active attempt, fencing epoch, and expected
-request IDs so historical failures do not poison a repaired bus.
-
-This is command-and-report interaction, not unrestricted peer chat. Node 0 is
-the only command publisher; workers report evidence in their result records.
-Worker-to-worker requests are forbidden. If a worker needs another node to act,
-it reports `needs_coordinator`, and Node 0 publishes a new request to that node.
-Do not rely on a shared Markdown file or an active worker Goal as notification.
-Do not attach a dispatcher to Node 0 while its Goal owns recovery.
+- the protected contract is the scientific run contract, including algorithm,
+  model/reward/data identities, batch/group and optimizer semantics, precision,
+  sampling, parallel mesh, evaluation, and checkpoint behavior;
+- Node 0 alone publishes shared code, assets, run contracts, and retries;
+  workers verify them and may repair only semantics-preserving node-local state;
+- the coordinator Goal owns global recovery only through
+  `FIRST_WORK_VALIDATED`; deterministic supervisors own waiting and trainers;
+- `AGENT_BUS_READY` and request results are sidecar control evidence. They do
+  not replace `NODE_LOCAL_READY`, `CLUSTER_READY`, `TRAINING_STARTED`, or
+  `FIRST_WORK_VALIDATED` evidence;
+- every shared operational repair needs a regression test, new commit, and new
+  attempt/nonce. An uncertain semantic effect requires user approval.
 
 ## Durable state machine
 

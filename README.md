@@ -1,8 +1,9 @@
 # AI Research Accelerator
 
-**AI for Accelerating Research.** An author-first plugin for Codex and Claude Code that covers the research workflow from distributed training to publication. It packages six primary skills:
+**AI for Accelerating Research.** An author-first plugin for Codex and Claude Code that covers the research workflow from distributed training to publication. It packages seven primary skills:
 
 - `multinode-training`: design, launch, validate, and debug reliable multi-node GPU training;
+- `shared-filesystem-agent-coordination`: coordinate multiple Agent sessions through a fenced shared-file message bus;
 - `long-task-relay`: monitor long-running work with a token-free rule-based watcher that wakes the exact agent conversation only when judgment is needed;
 - `write-insightful-topconf-paper`: build and audit insight-driven ML papers;
 - `github-paper-review-workflow`: revise Chinese semantic Markdown and formal English LaTeX through GitHub PR review;
@@ -13,6 +14,11 @@ The relay replaces model-driven `sleep`/poll loops with a persistent local
 watcher. It can observe logs, progress, markers, processes, and tmux sessions,
 then resume an exact Codex thread, invoke an explicit agent resume command,
 inject into a verified tmux TUI, or write a durable event inbox.
+
+The shared-filesystem Agent workflow provides coordinator-first bootstrap,
+exact-thread worker dispatch, atomic request/ACK/result records, fencing,
+bounded repair, and token-free monitoring for Agents that cannot message one
+another directly.
 
 The multi-node workflow treats topology, launch coordination, and external
 assets/services as separate contracts. It provides fail-closed staging,

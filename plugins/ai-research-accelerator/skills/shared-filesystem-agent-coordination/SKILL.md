@@ -1,0 +1,84 @@
+---
+name: shared-filesystem-agent-coordination
+description: Coordinate coding agents through a reliable shared-filesystem message bus with one coordinator, relay workers, exact-thread wakeups, atomic request/ACK/result records, fencing, monitoring, and bounded repair. Use when agents on different machines or sessions must collaborate without direct messaging.
+---
+
+# Shared Filesystem Agent Coordination
+
+Use shared storage as a message transport, not as a concurrently edited chat
+document. The default topology is a star:
+
+- one coordinator Agent owns global decisions, shared artifacts, and requests;
+- each worker uses an ordinary Agent thread plus a token-free dispatcher;
+- workers execute bounded local requests and return structured evidence;
+- worker-to-worker needs return to the coordinator for routing.
+
+This creates command-and-report collaboration, not unrestricted peer chat.
+
+## Assign control ownership
+
+Use Goal mode only for the coordinator's bounded objective. Worker threads stay
+in ordinary mode so a dispatcher can resume their exact thread only when a
+request requires judgment. Deterministic supervisors own waiting and already
+authorized transitions. Never attach a relay to an active Goal for the same
+objective.
+
+Freeze an immutable task contract before granting repair authority. Name the
+semantics and artifacts agents may not change. The coordinator may authorize
+operational repairs that preserve that contract; workers may repair strictly
+node-local operational state. Any uncertain or semantic change requires user
+approval.
+
+## Bootstrap coordinator-first
+
+The first-mile order is mandatory:
+
+1. The coordinator publishes and validates the pinned dispatcher tool,
+   immutable bus manifest, and final worker-specific bootstrap scripts.
+2. Only then does the user enter each ordinary worker prompt.
+3. Each worker executes its existing script and starts the dispatcher under a
+   durable owner independent of the Agent turn, such as tmux, a scheduler, or a
+   service manager.
+4. Worker acceptance requires all of: persisted `state.json`, matching
+   PID/start identity and exact thread/config, `process_alive=true`, and
+   `status=watching`.
+5. The coordinator runs two harmless `publish -> resume -> result -> watching`
+   round trips per worker, proving first delivery and re-arming.
+6. Only after every worker passes may the workflow publish real tasks.
+
+A bootstrap PID, `waiting`, `waiting-for-tool`, a tmux pane without the target
+dispatcher, or a log line is not readiness. A missing dispatcher cannot wake
+the Agent needed to install itself; repair that failure in the foreground
+worker turn or through an external actor.
+
+## Use structured, fenced messages
+
+Use attempt-scoped atomic JSON records for the manifest, authority/fencing
+epoch, inbox requests, claims, ACKs, terminal results, events, status, and
+terminal close. The coordinator is the only request publisher. Each worker
+owns its claim, ACK, result, and status paths. Preserve immutable history and
+reject stale attempts, epochs, nonces, hosts, threads, senders, and request IDs.
+
+Delivery is at-least-once; processing must be idempotent. A request retry uses
+a new request ID. If an accepted request loses its Agent before a terminal
+result, report `needs_coordinator` rather than replaying an unknown side effect.
+Watchers validate requests but never execute request text as shell code.
+
+## Interpret evidence correctly
+
+- `AGENT_BUS_READY` proves command delivery, Agent execution, result return,
+  and dispatcher re-arming.
+- Per-request dispatch/ACK/result proves only that bounded action's lifecycle.
+- Domain milestones require their own primary evidence; an Agent Bus smoke does
+  not prove that training, deployment, evaluation, or another workload started.
+- `watching` with no active request is healthy idle capacity, not failure or a
+  blocked Goal.
+
+Monitor heartbeats, inbox depth, claims, ACKs, results, invocation identity,
+and stale/failure events mechanically. Wake an Agent only for an actionable
+request or anomaly. Historical failures remain preserved but are scoped by the
+active attempt, fencing epoch, and expected request IDs.
+
+Read [protocol.md](references/protocol.md) before implementing a production
+bus, autonomous repair loop, or remote-Agent prompt. Use `long-task-relay`'s
+reviewed `shared_agent_dispatcher.py` rather than rewriting repeated delivery.

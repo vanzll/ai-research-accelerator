@@ -1,0 +1,4 @@
+interface:
+  display_name: "Shared-Filesystem Agent Coordination"
+  short_description: "Coordinate agents through a shared-file message bus."
+  default_prompt: "Design or audit this shared-filesystem multi-agent coordination workflow."

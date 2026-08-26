@@ -18,6 +18,7 @@ REQUIRED_SKILLS = {
     "manage-paper-experiments",
     "multinode-training",
     "plot-paper-experiments",
+    "shared-filesystem-agent-coordination",
     "write-insightful-topconf-paper",
 }
 

@@ -265,3 +265,22 @@
 - Removed the conflicting worker-before-coordinator `waiting-for-manifest`
   path; coordinator assets and final bootstrap scripts must exist first.
 - Raised the synchronized plugin version to `0.3.9`.
+
+## 2026-08-26 - Extract shared-filesystem Agent coordination
+
+- Added `shared-filesystem-agent-coordination` as a standalone primary skill
+  for multi-session and multi-host Agent collaboration independent of GPU
+  training.
+- Moved the general star topology, coordinator-first bootstrap, durable worker
+  dispatcher, atomic request/claim/ACK/result protocol, fencing, exactly-once
+  terminal processing through at-least-once delivery and request-ID
+  deduplication, monitoring, repair authority, and closure guidance into the new
+  skill and its protocol reference.
+- Reduced `multinode-training` to its domain integration: scientific-contract
+  protection, coordinator ownership of shared training assets and retries,
+  semantics-preserving repair, and independent distributed first-work evidence.
+- Kept the reviewed dispatcher implementation in `long-task-relay` so delivery
+  has one deterministic implementation rather than duplicate copies; the relay
+  skill now points back to the standalone coordination protocol.
+- Registered seven primary skills and raised the synchronized plugin version to
+  `0.4.0`.

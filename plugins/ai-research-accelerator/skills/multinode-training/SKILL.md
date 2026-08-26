@@ -62,64 +62,27 @@ watcher merely to re-prove evidence already frozen elsewhere.
 
 ## AI-assisted repair and node collaboration
 
-For unattended multi-node work, authorize agents to diagnose and repair
-operational bugs without granting permission to change the experiment. Freeze
-a machine-readable scientific contract first. Changes to communication,
-launching, environment activation, process ownership, telemetry, or framework
-compatibility may be repaired only when the scientific-contract hash and
-training semantics remain unchanged; every shared code repair needs a
-regression test, a new commit, and a new attempt/nonce. Any uncertain semantic
-effect requires user approval.
+Load `shared-filesystem-agent-coordination` before designing remote-Agent
+prompts, a shared-file message bus, or an autonomous repair loop. It owns the
+general coordinator/worker topology, first-mile bootstrap, request/ACK/result
+protocol, exact-thread relays, monitoring, and closure rules.
 
-Use one coordinator as the sole publisher of shared code, contracts, assets,
-and retry manifests. Worker agents may repair strictly node-local operational
-state, preserve evidence, and submit structured diagnoses or requests, but
-must not concurrently patch shared source. On a shared filesystem, coordinate
-through atomic structured records and append-only per-node events rather than
-having several agents edit one Markdown file. Read the AI-agent collaboration
-section of [reliable-launch.md](references/reliable-launch.md) before creating
-remote-agent prompts or an autonomous repair loop.
+For training, freeze a machine-readable scientific contract before granting
+repair authority. It must cover the algorithm/objective, model and reward
+identities, data and prompt protocol, batch/group and optimizer semantics,
+precision, sampling, parallel mesh, evaluation, and checkpoints. Operational
+repairs to communication, launching, environment activation, process ownership,
+telemetry, or framework compatibility are allowed only when that hash and the
+runtime semantic quantities remain unchanged. Shared repairs require a
+regression test, new commit, and new attempt/nonce; uncertain changes require
+user approval.
 
-For a Goal-driven launch, prefer a star-shaped hybrid: the coordinator Goal
-owns global diagnosis and semantics-preserving recovery only through the
-declared first-work gate; ordinary-mode worker agents are woken by token-free
-relays for bounded node-local requests, while deterministic supervisors own all
-waiting and authorized transitions. This is valid because control-mode
-ownership is scoped per role and objective. A relay must not wake the active
-coordinator Goal or duplicate any transition it owns. If the coordinator also
-enters a long external wait, explicitly hand that objective to an ordinary
-coordinator relay; a blocked Goal cannot be treated as event notification.
-The coordinator host's local training process remains supervisor-owned; its
-node-local operational incidents are handled directly by the coordinator Goal,
-not by a second relay targeting the same conversation.
-
-Implement worker wake-up with the `long-task-relay` skill's reviewed
-`shared_agent_dispatcher.py`: each worker ordinary thread registers its exact
-thread ID once, then a token-free watcher validates and delivers repeated Node
-0 requests through `codex exec resume`. Node 0 remains the only request
-publisher; workers return ACK/result records and never command one another.
-This is the default prompt pattern when the user asks for one Goal coordinator
-plus relay workers on a shared filesystem.
-
-Accept this agent bus only after every worker completes a harmless first
-delivery and a second follow-up delivery, returns terminal results, and
-re-enters `watching` under the same exact host/thread identity. Interpret
-`watching` with no active request as healthy idle capacity, not a blocked Goal
-or failed pipeline. Keep control-plane and experiment evidence separate:
-`AGENT_BUS_READY` proves that Node 0 can command and receive results;
-`TASK_DISPATCHED` proves that a real bounded action was issued; only node-ready,
-trainer, first-work, and tracker evidence proves that distributed training
-started. Once the bus is accepted, stop re-testing it unless its code, manifest,
-thread registrations, or hosts change.
-
-Bootstrap coordinator-first: Node 0 must publish and validate the pinned tool,
-manifest, and final worker scripts before the user enters any worker prompt.
-Each worker executes its existing script and starts the dispatcher under a
-durable owner independent of the agent turn, such as tmux, a scheduler, or a
-service manager. The worker may return only when `state.json` exists, the
-recorded PID identity matches, that process is alive, and status is exactly
-`watching`. A live bootstrap shell, `waiting`, or `waiting-for-tool` is never
-acceptance; an absent dispatcher cannot wake its own agent to repair bootstrap.
+The Node 0 Goal may own global diagnosis and semantics-preserving recovery only
+through the declared first-work gate. Deterministic supervisors own waiting and
+training processes; ordinary worker Agents handle bounded node-local incidents.
+`AGENT_BUS_READY` proves only Agent coordination. Require independent
+`NODE_LOCAL_READY`, `CLUSTER_READY`, `TRAINING_STARTED`, and
+`FIRST_WORK_VALIDATED` evidence before claiming distributed training success.
 
 ## Non-negotiable correctness rules
 

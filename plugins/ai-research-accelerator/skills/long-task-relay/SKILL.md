@@ -98,6 +98,10 @@ constructing a production relay or a remote-agent prompt.
 
 ## Shared-Agent Dispatcher
 
+Load `shared-filesystem-agent-coordination` for the complete coordinator/worker
+workflow, first-mile order, authority model, message schema, and evidence
+semantics. This section defines only the repeated delivery primitive.
+
 For an explicit multi-node coordinator-worker workflow, Node 0 may remain in
 Goal mode while each worker uses an ordinary Codex thread plus a token-free
 dispatcher. Node 0 atomically publishes a bounded structured request; the
