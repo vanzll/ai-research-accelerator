@@ -59,22 +59,30 @@ exact thread.
 
 ## Bootstrap coordinator-first
 
-The first-mile order is mandatory:
+Coordinator-first is an authority ordering rule, not necessarily a manual
+prompt ordering rule. The user may send all node prompts concurrently only
+when the final pinned tool and worker-specific bootstrap scripts already exist.
+Before Node 0 publishes the finalized campaign manifest and active-attempt
+record, each worker bootstrap may start a durable token-free wait, but it must
+not start the dispatcher, accept requests, mutate shared authority, or report
+readiness. After authority appears, it validates and adopts it automatically.
+
+The first-mile logical order is mandatory:
 
 1. The coordinator publishes and validates the pinned dispatcher tool,
    immutable campaign manifest, and final worker-specific bootstrap scripts.
-2. Only then does the user enter each ordinary worker prompt.
-3. Each worker executes its existing script and starts the dispatcher under a
+2. Each worker executes its existing script and starts the dispatcher under a
    durable owner independent of the Agent turn, such as tmux, a scheduler, or a
-   service manager.
-4. Worker acceptance requires all of: persisted `state.json`, matching
+   service manager. If prompts were sent concurrently, this owner performs only
+   the bounded authority wait until step 1 completes.
+3. Worker acceptance requires all of: persisted `state.json`, matching
    PID/start identity and exact thread/config, `process_alive=true`, and
    `status=watching`.
-5. The coordinator runs two harmless `publish -> resume -> result -> watching`
+4. The coordinator runs two harmless `publish -> resume -> result -> watching`
    round trips per worker, proving first delivery and re-arming. Repeat this
    only when dispatcher code, host/thread registration, or campaign authority
    changes, not for every attempt.
-6. Only after every worker passes may the workflow publish real tasks.
+5. Only after every worker passes may the workflow publish real tasks.
 
 A bootstrap PID, `waiting`, `waiting-for-tool`, a tmux pane without the target
 dispatcher, or a log line is not readiness. A missing dispatcher cannot wake

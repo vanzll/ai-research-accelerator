@@ -120,9 +120,12 @@ compatibility implementation and perform make-before-break handoff to the next
 attempt before closing the old root.
 
 Treat this initial worker wake path as a separate first-mile bootstrap. Before
-the user sends worker prompts, the coordinator must publish the exact tool
-checkout, manifest, and final node-specific bootstrap scripts. A worker prompt
-must execute that existing script, not merely create a waiter for future code.
+the user sends worker prompts, the exact tool checkout and final node-specific
+bootstrap scripts must already exist. The four prompts may then be sent
+concurrently: until Node 0 publishes the finalized campaign manifest and
+active-attempt record, each worker script may arm only a durable token-free,
+non-mutating authority wait. A worker prompt must execute that existing script,
+not merely create a waiter for future code.
 The script must place the dispatcher under a durable owner independent of the
 agent turn, such as tmux, a scheduler, or a service manager. It may end only
 after all acceptance checks hold together: `state.json` exists, the recorded

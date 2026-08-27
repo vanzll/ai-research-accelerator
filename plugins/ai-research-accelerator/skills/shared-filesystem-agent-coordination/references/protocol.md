@@ -58,10 +58,20 @@ effects. Never persist credentials in the bus.
 The bus cannot repair a missing worker dispatcher, so bootstrap is a distinct
 foreground phase:
 
+Campaign authority remains coordinator-first, but prompt delivery may be
+concurrent. This is safe only if the reviewed, pinned worker bootstrap already
+exists before prompts are sent and its durable owner performs a token-free,
+non-mutating wait until both the finalized campaign manifest and active-attempt
+record are present. Missing authority is then a first-mile wait, not worker
+readiness and not a blocked Goal. A worker must never infer or manufacture the
+missing authority itself.
+
 1. The coordinator prepares a pinned tool checkout, campaign manifest, and
-   complete host-specific scripts before workers are prompted.
-2. A worker prompt executes its existing script; it does not create a future
-   waiter or return while dependencies are absent.
+   complete host-specific scripts before dispatchers may accept work. The user
+   may already have entered worker prompts when their final scripts are present.
+2. A worker prompt executes its existing script; it does not create future
+   code. It may arm the reviewed durable authority waiter, but may not return
+   until the real dispatcher is accepted.
 3. The script starts the dispatcher under a durable process owner that survives
    the Agent turn.
 4. Acceptance is conjunctive: state file present, expected PID/start identity,
