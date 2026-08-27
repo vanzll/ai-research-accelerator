@@ -328,3 +328,27 @@
 - Clarified that host/thread/epoch checks are identity fencing under a trusted
   shared-filesystem threat model; untrusted writers require ACLs or signatures.
 - Raised the synchronized plugin version to `0.5.0`.
+
+## 2026-08-27 - Remove worker conversation lifetime from campaigns
+
+- Replaced exact-thread resume as the campaign default with one fresh,
+  ephemeral Codex invocation per bounded request. Persistent shared records and
+  repository handoffs are now worker memory; a TUI thread ending or being
+  replaced no longer breaks Node 0-to-worker delivery.
+- Retained exact-thread resume only as an explicit compatibility adapter with
+  a pinned transcript and `CODEX_HOME`; reusable campaign bootstraps must not
+  hard-code TUI threads or use `--last`.
+- Froze and persisted the worker adapter, Codex executable, Codex home, work
+  directory, and extra arguments. Dispatcher-owned prompt/result arguments
+  cannot be overridden.
+- Preserved the campaign lifecycle across attempts: a durable node owner keeps
+  the campaign supervisor alive, the supervisor restarts the dispatcher, and
+  only the dispatcher creates short-lived Agents. Only fenced Goal completion
+  closes those persistent layers.
+- Fixed a concurrent-start race in which a live supervisor whose dispatcher
+  state had not yet appeared could be mistaken for an absent supervisor.
+- Added tests for fresh invocation arguments and environment, explicit resume
+  compatibility, reserved-argument rejection, and idempotent startup through
+  the supervisor/dispatcher state publication window. The full repository now
+  passes 46 tests.
+- Raised the synchronized plugin version to `0.6.0`.

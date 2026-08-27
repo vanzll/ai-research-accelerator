@@ -11,6 +11,7 @@ import glob
 import json
 import os
 import shlex
+import shutil
 import signal
 import socket
 import subprocess
@@ -23,6 +24,8 @@ from typing import Any
 
 SCHEMA_VERSION = 1
 DEFAULT_INSTANCE_ID = "foreground"
+DEFAULT_AGENT_MODE = "fresh"
+AGENT_MODES = {"fresh", "resume"}
 TERMINAL_RESULT_STATES = {"succeeded", "failed", "needs_coordinator"}
 ACTIVE_DISPATCHER_STATES = {
     "waiting-for-manifest",
@@ -808,8 +811,13 @@ def close_bus(args: argparse.Namespace) -> int:
     return 0
 
 
-def discover_session_path(thread_id: str) -> Path | None:
-    codex_home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
+def discover_session_path(
+    thread_id: str, codex_home: str | Path | None = None
+) -> Path | None:
+    codex_home = Path(
+        codex_home
+        or os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))
+    )
     pattern = str(codex_home / "sessions" / "**" / f"*{thread_id}*.jsonl")
     candidates = [Path(path) for path in glob.glob(pattern, recursive=True)]
     return max(candidates, key=lambda path: path.stat().st_mtime) if candidates else None
@@ -836,6 +844,87 @@ def thread_idle(session_path: Path, quiet_seconds: int) -> bool:
             if event_type in {"task_started", "task_complete"}:
                 latest_lifecycle = event_type
     return latest_lifecycle == "task_complete"
+
+
+def normalize_codex_args(values: list[str] | None) -> list[str]:
+    args = list(values or [])
+    reserved = {
+        "--output-schema",
+        "--output-last-message",
+        "-o",
+        "--ephemeral",
+        "--skip-git-repo-check",
+        "resume",
+        "fork",
+        "-",
+        "--",
+    }
+    reserved_prefixes = ("--output-schema=", "--output-last-message=", "-o=")
+    for value in args:
+        if not value or "\0" in value:
+            raise ValueError("codex arguments must be non-empty strings without NUL")
+        if value in reserved or value.startswith(reserved_prefixes):
+            raise ValueError(f"dispatcher owns reserved Codex argument: {value}")
+    return args
+
+
+def resolve_codex_path(value: str) -> str:
+    if os.sep in value:
+        path = Path(value).expanduser().resolve()
+        if not path.is_file() or not os.access(path, os.X_OK):
+            raise FileNotFoundError(f"Codex executable is not runnable: {path}")
+        return str(path)
+    resolved = shutil.which(value)
+    if resolved is None:
+        raise FileNotFoundError(f"Codex executable not found on PATH: {value}")
+    return str(Path(resolved).resolve())
+
+
+def worker_agent_config(
+    args: argparse.Namespace, default_mode: str
+) -> dict[str, Any]:
+    mode = str(getattr(args, "agent_mode", default_mode))
+    if mode not in AGENT_MODES:
+        raise ValueError(f"unsupported agent mode: {mode}")
+    workdir = Path(args.workdir).expanduser().resolve()
+    if not workdir.is_dir():
+        raise FileNotFoundError(workdir)
+    codex_home_value = getattr(args, "codex_home", None) or os.environ.get(
+        "CODEX_HOME"
+    )
+    codex_home = (
+        str(Path(codex_home_value).expanduser().resolve())
+        if codex_home_value
+        else None
+    )
+    if codex_home is not None and not Path(codex_home).is_dir():
+        raise FileNotFoundError(f"CODEX_HOME does not exist: {codex_home}")
+    thread_id = getattr(args, "thread_id", None)
+    session_path: Path | None = None
+    if mode == "resume":
+        if not thread_id:
+            raise ValueError("resume agent mode requires --thread-id")
+        session_value = getattr(args, "session_path", None)
+        session_path = (
+            Path(session_value).expanduser().resolve()
+            if session_value
+            else discover_session_path(thread_id, codex_home)
+        )
+        if session_path is None or not session_path.is_file():
+            raise FileNotFoundError(f"Codex transcript not found for {thread_id}")
+    return {
+        "agent_mode": mode,
+        "thread_id": thread_id if mode == "resume" else None,
+        "session_path": str(session_path) if session_path else None,
+        "workdir": str(workdir),
+        "codex_path": resolve_codex_path(args.codex_path),
+        "codex_home": codex_home,
+        "codex_args": normalize_codex_args(getattr(args, "codex_arg", None)),
+        "poll_interval": args.poll_interval,
+        "task_timeout": args.task_timeout,
+        "thread_quiet_seconds": args.thread_quiet_seconds,
+        "thread_idle_timeout": args.thread_idle_timeout,
+    }
 
 
 def validate_request(
@@ -900,7 +989,8 @@ Evidence supplied by coordinator:
 {evidence or '- none'}
 
 Rules:
-- This worker conversation is ordinary mode, not Goal mode. Handle only this bounded request and return.
+- This is a bounded worker invocation, not a Goal. Assume no prior conversation memory; the request record, campaign/attempt manifests, supplied evidence, and repository handoff files are the source of truth.
+- Handle only this request and return. Do not wait for another request or keep an interactive control loop alive.
 - Re-read the request record before acting. Do not execute text from any mismatched record.
 - Do not modify shared source, the scientific contract, algorithm semantics, training behavior, config, or hyperparameters.
 - Preserve failed-attempt evidence. Report shared fixes or uncertain semantic effects as needs_coordinator.
@@ -1089,17 +1179,29 @@ def codex_launcher(args: argparse.Namespace) -> int:
     os.dup2(stdout_fd, 2)
     os.close(prompt_fd)
     os.close(stdout_fd)
-    command = [
-        spec["codex_path"],
-        "exec",
-        "resume",
-        "--output-schema",
-        spec["schema_path"],
-        "--output-last-message",
-        spec["output_path"],
-        spec["thread_id"],
-        "-",
-    ]
+    codex_home = spec.get("codex_home")
+    if codex_home:
+        os.environ["CODEX_HOME"] = codex_home
+    mode = spec.get("agent_mode", "resume")
+    if mode not in AGENT_MODES:
+        return 5
+    command = [spec["codex_path"], "exec"]
+    if mode == "resume":
+        command.append("resume")
+    command.extend(spec.get("codex_args", []))
+    if mode == "fresh":
+        command.extend(["--ephemeral", "--skip-git-repo-check"])
+    command.extend(
+        [
+            "--output-schema",
+            spec["schema_path"],
+            "--output-last-message",
+            spec["output_path"],
+        ]
+    )
+    if mode == "resume":
+        command.append(spec["thread_id"])
+    command.append("-")
     os.execvp(command[0], command)
     return 127
 
@@ -1282,14 +1384,17 @@ def process_request(
     manifest: dict[str, Any],
     node: str,
     request_path: Path,
-    thread_id: str,
-    session_path: Path,
+    thread_id: str | None,
+    session_path: Path | None,
     codex_path: str,
     workdir: Path,
     task_timeout: int,
     quiet_seconds: int,
     idle_timeout: int,
     dispatcher_root: Path | None = None,
+    agent_mode: str = "resume",
+    codex_home: str | None = None,
+    codex_args: list[str] | None = None,
 ) -> None:
     control_root = dispatcher_root or root
     request = read_json(request_path)
@@ -1336,7 +1441,9 @@ def process_request(
     elif not atomic_create_json(claim_path, claim):
         return
 
-    if not invocation_path.exists():
+    if not invocation_path.exists() and agent_mode == "resume":
+        if session_path is None or thread_id is None:
+            raise ValueError("resume agent mode requires thread and session identity")
         idle_deadline = time.monotonic() + idle_timeout
         while not thread_idle(session_path, quiet_seconds):
             heartbeat_existing_state(
@@ -1432,6 +1539,9 @@ def process_request(
                 "dispatcher_root": str(control_root.resolve()),
                 "authority_lock_path": str(authority_lock_path(manifest)),
                 "codex_path": codex_path,
+                "codex_home": codex_home,
+                "codex_args": list(codex_args or []),
+                "agent_mode": agent_mode,
                 "thread_id": thread_id,
                 "workdir": str(workdir),
                 "task_timeout": task_timeout,
@@ -1570,14 +1680,17 @@ def dispatch_pending_once(
     root: Path,
     manifest: dict[str, Any],
     node: str,
-    thread_id: str,
-    session_path: Path,
+    thread_id: str | None,
+    session_path: Path | None,
     codex_path: str,
     workdir: Path,
     task_timeout: int,
     quiet_seconds: int,
     idle_timeout: int,
     dispatcher_root: Path | None = None,
+    agent_mode: str = "resume",
+    codex_home: str | None = None,
+    codex_args: list[str] | None = None,
 ) -> None:
     inbox = root / "inbox" / node
     for request_path in sorted(inbox.glob("*.json")):
@@ -1594,31 +1707,18 @@ def dispatch_pending_once(
             quiet_seconds,
             idle_timeout,
             dispatcher_root,
+            agent_mode,
+            codex_home,
+            codex_args,
         )
 
 
 def run_dispatcher(args: argparse.Namespace) -> int:
     root = Path(args.root).expanduser().resolve()
-    session_path = (
-        Path(args.session_path).expanduser().resolve()
-        if args.session_path
-        else discover_session_path(args.thread_id)
-    )
-    if session_path is None or not session_path.exists():
-        raise FileNotFoundError(f"Codex transcript not found for {args.thread_id}")
-    workdir = Path(args.workdir).expanduser().resolve()
-    if not workdir.exists():
-        raise FileNotFoundError(workdir)
+    config = worker_agent_config(args, "resume")
     state_values = {
         "instance_id": args.instance_id,
-        "thread_id": args.thread_id,
-        "session_path": str(session_path),
-        "workdir": str(workdir),
-        "codex_path": args.codex_path,
-        "poll_interval": args.poll_interval,
-        "task_timeout": args.task_timeout,
-        "thread_quiet_seconds": args.thread_quiet_seconds,
-        "thread_idle_timeout": args.thread_idle_timeout,
+        **config,
     }
     lock_path = root / "dispatcher" / args.node / "dispatcher.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1670,14 +1770,17 @@ def run_dispatcher(args: argparse.Namespace) -> int:
                     root,
                     manifest,
                     args.node,
-                    args.thread_id,
-                    session_path,
-                    args.codex_path,
-                    workdir,
-                        args.task_timeout,
-                        args.thread_quiet_seconds,
-                        args.thread_idle_timeout,
-                    )
+                    config["thread_id"],
+                    Path(config["session_path"]) if config["session_path"] else None,
+                    config["codex_path"],
+                    Path(config["workdir"]),
+                    args.task_timeout,
+                    args.thread_quiet_seconds,
+                    args.thread_idle_timeout,
+                    agent_mode=config["agent_mode"],
+                    codex_home=config["codex_home"],
+                    codex_args=config["codex_args"],
+                )
                 time.sleep(args.poll_interval)
         finally:
             current_status = "stopped"
@@ -1692,18 +1795,7 @@ def run_dispatcher(args: argparse.Namespace) -> int:
 def start_dispatcher(args: argparse.Namespace) -> int:
     root = Path(args.root).expanduser().resolve()
     state_path = dispatcher_state_path(root, args.node)
-    requested_config = {
-        "thread_id": args.thread_id,
-        "session_path": str(Path(args.session_path).expanduser().resolve())
-        if args.session_path
-        else str(discover_session_path(args.thread_id)),
-        "workdir": str(Path(args.workdir).expanduser().resolve()),
-        "codex_path": args.codex_path,
-        "poll_interval": args.poll_interval,
-        "task_timeout": args.task_timeout,
-        "thread_quiet_seconds": args.thread_quiet_seconds,
-        "thread_idle_timeout": args.thread_idle_timeout,
-    }
+    requested_config = worker_agent_config(args, "resume")
     if state_path.exists():
         state = read_json(state_path)
         if state.get("status") in ACTIVE_DISPATCHER_STATES and (
@@ -1738,12 +1830,12 @@ def start_dispatcher(args: argparse.Namespace) -> int:
         args.node,
         "--instance-id",
         instance_id,
-        "--thread-id",
-        args.thread_id,
+        "--agent-mode",
+        requested_config["agent_mode"],
         "--workdir",
-        args.workdir,
+        requested_config["workdir"],
         "--codex-path",
-        args.codex_path,
+        requested_config["codex_path"],
         "--poll-interval",
         str(args.poll_interval),
         "--task-timeout",
@@ -1753,8 +1845,13 @@ def start_dispatcher(args: argparse.Namespace) -> int:
         "--thread-idle-timeout",
         str(args.thread_idle_timeout),
     ]
-    if args.session_path:
-        command.extend(["--session-path", args.session_path])
+    if requested_config["codex_home"]:
+        command.extend(["--codex-home", requested_config["codex_home"]])
+    for value in requested_config["codex_args"]:
+        command.append(f"--codex-arg={value}")
+    if requested_config["agent_mode"] == "resume":
+        command.extend(["--thread-id", requested_config["thread_id"]])
+        command.extend(["--session-path", requested_config["session_path"]])
     with log_path.open("a", encoding="utf-8") as log:
         process = subprocess.Popen(
             command,
@@ -1875,23 +1972,7 @@ def campaign_supervisor_process_matches(
 
 
 def campaign_dispatcher_config(args: argparse.Namespace) -> dict[str, Any]:
-    session = (
-        Path(args.session_path).expanduser().resolve()
-        if args.session_path
-        else discover_session_path(args.thread_id)
-    )
-    if session is None:
-        raise FileNotFoundError(f"Codex transcript not found for {args.thread_id}")
-    return {
-        "thread_id": args.thread_id,
-        "session_path": str(session),
-        "workdir": str(Path(args.workdir).expanduser().resolve()),
-        "codex_path": args.codex_path,
-        "poll_interval": args.poll_interval,
-        "task_timeout": args.task_timeout,
-        "thread_quiet_seconds": args.thread_quiet_seconds,
-        "thread_idle_timeout": args.thread_idle_timeout,
-    }
+    return worker_agent_config(args, DEFAULT_AGENT_MODE)
 
 
 def validate_campaign_worker_runtime(
@@ -1907,10 +1988,13 @@ def validate_campaign_worker_runtime(
         raise ValueError(
             f"host mismatch for {node}: running on {short_hostname()}, expected {expected_host}"
         )
-    session_path = Path(config["session_path"])
-    if not session_path.exists():
-        raise FileNotFoundError(f"Codex transcript not found for {config['thread_id']}")
-    if not Path(config["workdir"]).exists():
+    if config["agent_mode"] == "resume":
+        session_path = Path(config["session_path"])
+        if not session_path.is_file():
+            raise FileNotFoundError(
+                f"Codex transcript not found for {config['thread_id']}"
+            )
+    if not Path(config["workdir"]).is_dir():
         raise FileNotFoundError(config["workdir"])
     return campaign
 
@@ -2012,14 +2096,17 @@ def run_campaign_dispatcher(args: argparse.Namespace) -> int:
                 attempt_root,
                 attempt,
                 args.node,
-                args.thread_id,
-                Path(config["session_path"]),
-                args.codex_path,
+                config["thread_id"],
+                Path(config["session_path"]) if config["session_path"] else None,
+                config["codex_path"],
                 Path(config["workdir"]),
                 args.task_timeout,
                 args.thread_quiet_seconds,
                 args.thread_idle_timeout,
                 dispatcher_root=root,
+                agent_mode=config["agent_mode"],
+                codex_home=config["codex_home"],
+                codex_args=config["codex_args"],
             )
             time.sleep(args.poll_interval)
 
@@ -2105,12 +2192,12 @@ def supervise_campaign_dispatcher(args: argparse.Namespace) -> int:
                 args.node,
                 "--instance-id",
                 dispatcher_instance_id,
-                "--thread-id",
-                args.thread_id,
+                "--agent-mode",
+                config["agent_mode"],
                 "--workdir",
-                args.workdir,
+                config["workdir"],
                 "--codex-path",
-                args.codex_path,
+                config["codex_path"],
                 "--poll-interval",
                 str(args.poll_interval),
                 "--task-timeout",
@@ -2120,8 +2207,13 @@ def supervise_campaign_dispatcher(args: argparse.Namespace) -> int:
                 "--thread-idle-timeout",
                 str(args.thread_idle_timeout),
             ]
-            if args.session_path:
-                command.extend(["--session-path", args.session_path])
+            if config["codex_home"]:
+                command.extend(["--codex-home", config["codex_home"]])
+            for value in config["codex_args"]:
+                command.append(f"--codex-arg={value}")
+            if config["agent_mode"] == "resume":
+                command.extend(["--thread-id", config["thread_id"]])
+                command.extend(["--session-path", config["session_path"]])
             child = subprocess.Popen(command, close_fds=True)
             update_campaign_supervisor_state(
                 root,
@@ -2198,9 +2290,8 @@ def start_campaign_dispatcher(args: argparse.Namespace) -> int:
     supervisor_path = campaign_supervisor_state_path(root, args.node)
     state_path = dispatcher_state_path(root, args.node)
     requested = {**config, "campaign_id": campaign["campaign_id"]}
-    if supervisor_path.exists() and state_path.exists():
+    if supervisor_path.exists():
         supervisor = read_json(supervisor_path)
-        state = read_json(state_path)
         if campaign_supervisor_process_matches(supervisor, root, args.node):
             mismatched = [
                 key for key, value in requested.items() if supervisor.get(key) != value
@@ -2212,10 +2303,17 @@ def start_campaign_dispatcher(args: argparse.Namespace) -> int:
                 )
             deadline = time.monotonic() + 20
             while time.monotonic() < deadline:
+                if not campaign_supervisor_process_matches(
+                    supervisor, root, args.node
+                ):
+                    break
                 if state_path.exists():
                     state = read_json(state_path)
                     if dispatcher_process_matches(state, root, args.node) and (
                         state.get("status") in ACTIVE_DISPATCHER_STATES
+                    ) and (
+                        state.get("instance_id")
+                        == supervisor.get("dispatcher_instance_id")
                     ):
                         print(supervisor_path)
                         return 0
@@ -2239,12 +2337,12 @@ def start_campaign_dispatcher(args: argparse.Namespace) -> int:
         args.node,
         "--instance-id",
         instance_id,
-        "--thread-id",
-        args.thread_id,
+        "--agent-mode",
+        config["agent_mode"],
         "--workdir",
-        args.workdir,
+        config["workdir"],
         "--codex-path",
-        args.codex_path,
+        config["codex_path"],
         "--poll-interval",
         str(args.poll_interval),
         "--task-timeout",
@@ -2256,8 +2354,13 @@ def start_campaign_dispatcher(args: argparse.Namespace) -> int:
         "--restart-backoff",
         str(args.restart_backoff),
     ]
-    if args.session_path:
-        command.extend(["--session-path", args.session_path])
+    if config["codex_home"]:
+        command.extend(["--codex-home", config["codex_home"]])
+    for value in config["codex_args"]:
+        command.append(f"--codex-arg={value}")
+    if config["agent_mode"] == "resume":
+        command.extend(["--thread-id", config["thread_id"]])
+        command.extend(["--session-path", config["session_path"]])
     with log_path.open("a", encoding="utf-8") as log:
         process = subprocess.Popen(
             command,
@@ -2434,11 +2537,16 @@ def build_parser() -> argparse.ArgumentParser:
         dispatch = subparsers.add_parser(command)
         dispatch.add_argument("--root", required=True)
         dispatch.add_argument("--node", required=True)
-        dispatch.add_argument("--thread-id", required=True)
+        dispatch.add_argument(
+            "--agent-mode", choices=sorted(AGENT_MODES), default="resume"
+        )
+        dispatch.add_argument("--thread-id")
         dispatch.add_argument("--instance-id", default=DEFAULT_INSTANCE_ID)
         dispatch.add_argument("--session-path")
         dispatch.add_argument("--workdir", required=True)
         dispatch.add_argument("--codex-path", default="codex")
+        dispatch.add_argument("--codex-home")
+        dispatch.add_argument("--codex-arg", action="append", default=[])
         dispatch.add_argument("--poll-interval", type=float, default=2.0)
         dispatch.add_argument("--task-timeout", type=int, default=7200)
         dispatch.add_argument("--thread-quiet-seconds", type=int, default=5)
@@ -2453,11 +2561,16 @@ def build_parser() -> argparse.ArgumentParser:
         dispatch = subparsers.add_parser(command)
         dispatch.add_argument("--root", required=True)
         dispatch.add_argument("--node", required=True)
-        dispatch.add_argument("--thread-id", required=True)
+        dispatch.add_argument(
+            "--agent-mode", choices=sorted(AGENT_MODES), default=DEFAULT_AGENT_MODE
+        )
+        dispatch.add_argument("--thread-id")
         dispatch.add_argument("--instance-id", default=DEFAULT_INSTANCE_ID)
         dispatch.add_argument("--session-path")
         dispatch.add_argument("--workdir", required=True)
         dispatch.add_argument("--codex-path", default="codex")
+        dispatch.add_argument("--codex-home")
+        dispatch.add_argument("--codex-arg", action="append", default=[])
         dispatch.add_argument("--poll-interval", type=float, default=2.0)
         dispatch.add_argument("--task-timeout", type=int, default=7200)
         dispatch.add_argument("--thread-quiet-seconds", type=int, default=5)

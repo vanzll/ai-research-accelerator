@@ -15,7 +15,7 @@ filesystem. Host/thread/nonce/epoch checks provide identity fencing, not
 cryptographic authentication. Use ACLs or Node 0 signatures when other
 principals can write these paths.
 
-Workers own only their node/session-local execution state and their structured
+Workers own only their node-local execution state and their structured
 claims, acknowledgements, results, and events. They never patch shared source
 concurrently or command another worker. A worker that needs another node to act
 returns `needs_coordinator`; the coordinator publishes a new bounded request to
@@ -73,10 +73,11 @@ missing authority itself.
    code. It may arm the reviewed durable authority waiter, but may not return
    until the real dispatcher is accepted.
 3. The script starts the dispatcher under a durable process owner that survives
-   the Agent turn.
+   the Agent turn. The owner restarts an abnormally exited campaign supervisor;
+   that supervisor restarts an abnormally exited dispatcher.
 4. Acceptance is conjunctive: state file present, expected PID/start identity,
-   exact host/thread/config, process alive, durable owner alive, and
-   `status=watching`.
+   exact host/execution-adapter config, process alive, durable owner alive,
+   `agent_mode=fresh`, and `status=watching`.
 5. Run two real harmless deliveries per worker. Each must create the expected
    claim, ACK, invocation, terminal result, and final re-armed `watching` state.
 
@@ -85,8 +86,31 @@ bootstrap can disappear when the Agent exits and creates a self-bootstrap
 deadlock.
 
 Bootstrap is normally once per campaign, not once per retry. Repeat it only if
-the dispatcher implementation, worker host/thread identity, or campaign
-authority changes.
+the dispatcher implementation, worker host identity, execution adapter, or
+campaign authority changes. A new TUI conversation is irrelevant in fresh
+mode.
+
+## Worker execution adapters
+
+Use `fresh` by default. For every accepted request, the persistent dispatcher
+starts a new ephemeral Agent process, passes the bounded request plus durable
+context paths on stdin, captures one schema-validated result, and exits that
+Agent. The dispatcher, not the Agent, owns waiting and request sequencing.
+Repository handoffs and shared records are memory; conversation history is not.
+
+`resume` is an opt-in compatibility adapter. It requires a current thread ID,
+transcript path, and matching Agent home namespace. Treat that binding as an
+expiring lease: drain active work, stop the old dispatcher, restart it with the
+new binding under the same campaign owner, validate the new process identity,
+and complete two harmless deliveries before use. A
+missing rollout yields `needs_coordinator`; it must never terminate the
+campaign dispatcher. Never use `--last` or hard-code a thread in a reusable
+bootstrap.
+
+Freeze the Agent executable, Agent home path, work directory, adapter mode, and
+additional CLI arguments in dispatcher state. Do not persist credentials.
+Reject additional arguments that can replace the dispatcher-owned prompt,
+output schema, output path, or ephemeral lifecycle.
 
 ## Attempt transitions
 
@@ -123,7 +147,8 @@ prevents both false migration failures and concurrent exact-thread resumes.
 1. The coordinator publishes one immutable bounded request.
 2. The dispatcher validates authority, active attempt, fencing epoch, target,
    host, and request ID.
-3. It atomically claims the request and resumes the exact idle Agent thread.
+3. It atomically claims the request and launches one bounded fresh Agent by
+   default; resume mode first proves the selected thread is idle.
 4. The invocation writes an ACK only after the Agent process is actually
    spawned.
 5. The Agent handles one request and returns a structured terminal status:
@@ -185,5 +210,6 @@ Attempt terminal, request failure, idle timeout, trainer exit, missing next
 attempt, or temporary coordinator loss must not trigger dispatcher shutdown.
 When authority is unavailable or ambiguous, remain alive in a fenced
 non-executing wait. If the dispatcher process crashes, its durable supervisor
-restarts it; a crash is not campaign completion. Archive compact bus metadata
+restarts it. If the supervisor crashes, the node-level durable owner restarts
+it; neither crash is campaign completion. Archive compact bus metadata
 after `GOAL_COMPLETED`; do not delete formal lineage.

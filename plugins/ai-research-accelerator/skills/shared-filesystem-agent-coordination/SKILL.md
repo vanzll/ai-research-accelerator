@@ -1,6 +1,6 @@
 ---
 name: shared-filesystem-agent-coordination
-description: Coordinate coding agents through a reliable shared-filesystem message bus with one coordinator, relay workers, exact-thread wakeups, atomic request/ACK/result records, fencing, monitoring, and bounded repair. Use when agents on different machines or sessions must collaborate without direct messaging.
+description: Coordinate coding agents through a reliable shared-filesystem message bus with one coordinator, persistent dispatchers, bounded stateless workers, optional exact-thread resumes, atomic request/ACK/result records, fencing, monitoring, and repair. Use when agents on different machines or sessions must collaborate without direct messaging.
 ---
 
 # Shared Filesystem Agent Coordination
@@ -9,7 +9,8 @@ Use shared storage as a message transport, not as a concurrently edited chat
 document. The default topology is a star:
 
 - one coordinator Agent owns global decisions, shared artifacts, and requests;
-- each worker uses an ordinary Agent thread plus a token-free dispatcher;
+- each node runs a campaign-scoped token-free dispatcher that launches one
+  bounded Agent invocation per request;
 - workers execute bounded local requests and return structured evidence;
 - worker-to-worker needs return to the coordinator for routing.
 
@@ -17,11 +18,14 @@ This creates command-and-report collaboration, not unrestricted peer chat.
 
 ## Assign control ownership
 
-Use Goal mode only for the coordinator's bounded objective. Worker threads stay
-in ordinary mode so a dispatcher can resume their exact thread only when a
-request requires judgment. Deterministic supervisors own waiting and already
-authorized transitions. Never attach a relay to an active Goal for the same
-objective.
+Use Goal mode only for the coordinator's bounded objective. Worker execution is
+stateless by default: a dispatcher launches a fresh ephemeral Agent for one
+request, with shared records and repository handoffs as its complete context.
+This removes TUI, thread, transcript, and conversation-lifetime dependencies.
+Use exact-thread resume only as an explicit compatibility adapter when prior
+conversation state is genuinely required. Deterministic supervisors own
+waiting and already authorized transitions. Never attach a relay to an active
+Goal for the same objective.
 
 Freeze an immutable task contract before granting repair authority. Name the
 semantics and artifacts agents may not change. The coordinator may authorize
@@ -73,14 +77,16 @@ The first-mile logical order is mandatory:
    immutable campaign manifest, and final worker-specific bootstrap scripts.
 2. Each worker executes its existing script and starts the dispatcher under a
    durable owner independent of the Agent turn, such as tmux, a scheduler, or a
-   service manager. If prompts were sent concurrently, this owner performs only
-   the bounded authority wait until step 1 completes.
+   service manager. That owner must also restart the campaign supervisor if it
+   exits unexpectedly; the campaign supervisor in turn restarts the dispatcher.
+   If prompts were sent concurrently, this owner performs only the bounded
+   authority wait until step 1 completes.
 3. Worker acceptance requires all of: persisted `state.json`, matching
-   PID/start identity and exact thread/config, `process_alive=true`, and
-   `status=watching`.
-4. The coordinator runs two harmless `publish -> resume -> result -> watching`
+   PID/start identity, host and execution-adapter config,
+   `process_alive=true`, `agent_mode=fresh`, and `status=watching`.
+4. The coordinator runs two harmless `publish -> spawn -> result -> watching`
    round trips per worker, proving first delivery and re-arming. Repeat this
-   only when dispatcher code, host/thread registration, or campaign authority
+   only when dispatcher code, host/adapter registration, or campaign authority
    changes, not for every attempt.
 5. Only after every worker passes may the workflow publish real tasks.
 
@@ -96,7 +102,8 @@ heartbeat, active-attempt selection, and campaign close. Keep each attempt's
 manifest, inbox requests, claims, ACKs, terminal results, and events under its
 own immutable path. The coordinator is the only request publisher. Each worker
 owns its claim, ACK, result, and status paths. Preserve history and reject stale
-attempts, epochs, nonces, hosts, threads, senders, and request IDs.
+attempts, epochs, nonces, hosts, execution generations, senders, and request
+IDs.
 
 Delivery is at-least-once; processing must be idempotent. A request retry uses
 a new request ID. If an accepted request loses its Agent before a terminal
@@ -104,7 +111,7 @@ result, report `needs_coordinator` rather than replaying an unknown side effect.
 Watchers validate requests but never execute request text as shell code.
 
 The default threat model trusts the shared storage writers and uses immutable
-records plus host, thread, nonce, contract, and epoch validation. If unrelated
+records plus host, process identity, nonce, contract, and epoch validation. If unrelated
 or adversarial principals can write the bus, enforce filesystem ACLs or verify
 Node 0 signatures; matching JSON fields alone are not cryptographic
 authentication.
@@ -128,7 +135,8 @@ python shared_agent_dispatcher.py campaign-activate \
 
 python shared_agent_dispatcher.py campaign-start \
   --root "$CAMPAIGN_ROOT" --node node1 \
-  --thread-id "$WORKER_THREAD" --workdir "$WORKDIR"
+  --agent-mode fresh --workdir "$WORKDIR" \
+  --codex-path "$CODEX" --codex-home "$CODEX_HOME"
 ```
 
 `campaign-activate` is a compare-and-swap. The first activation expects epoch
@@ -136,9 +144,33 @@ python shared_agent_dispatcher.py campaign-start \
 requires the expected final root, attempt, nonce, and epoch. Do not use the old
 attempt-scoped `start` command for a new campaign.
 
+`fresh` is the campaign default and runs `codex exec --ephemeral`; it does not
+read or persist a conversation. `resume` requires an explicit current thread,
+transcript, and matching `CODEX_HOME`, and must be re-registered whenever that
+session changes. Never hard-code a TUI thread into a reusable campaign script.
+Freeze extra Codex arguments at bootstrap; the dispatcher rejects arguments
+that could override its prompt or structured-result channel.
+
+The protocol is transport-independent even though this implementation uses a
+shared filesystem. On clusters without shared storage, replace atomic files
+with a durable queue/object-store adapter that preserves the same immutable
+request, ACK, result, fencing, and ownership semantics. A local Agent CLI plus
+a durable message transport are prerequisites; fail explicitly when either is
+unavailable rather than claiming universal operation.
+
+Keep the process hierarchy explicit:
+
+```text
+durable node owner -> campaign supervisor -> dispatcher -> one fresh Agent/request
+```
+
+Only the final Agent is short-lived. The first three levels remain available
+across attempt failures; the durable owner exits only after the supervisor has
+accepted the fenced `GOAL_COMPLETED` record.
+
 ## Interpret evidence correctly
 
-- `AGENT_BUS_READY` proves command delivery, Agent execution, result return,
+- `AGENT_BUS_READY` proves command delivery, fresh Agent execution, result return,
   and dispatcher re-arming.
 - Per-request dispatch/ACK/result proves only that bounded action's lifecycle.
 - Domain milestones require their own primary evidence; an Agent Bus smoke does

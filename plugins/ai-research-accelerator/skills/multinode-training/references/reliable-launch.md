@@ -13,8 +13,8 @@ The coordinator is not allowed to report startup success until every expected no
 ## AI-agent collaboration over shared storage
 
 Use the `shared-filesystem-agent-coordination` skill for the general Agent Bus,
-first-mile bootstrap, coordinator/worker modes, message protocol, exact-thread
-wakeups, monitoring, and repair loop. The training integration adds these
+first-mile bootstrap, coordinator/worker modes, message protocol, stateless
+worker execution, optional resume adapters, monitoring, and repair loop. The training integration adds these
 constraints:
 
 - the protected contract is the scientific run contract, including algorithm,

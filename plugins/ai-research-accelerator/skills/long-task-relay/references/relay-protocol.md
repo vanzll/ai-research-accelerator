@@ -170,9 +170,9 @@ safe fallback when exact-session resume is unavailable.
   context in the event prompt.
 - Use `test-event` before unattended operation when delivery is critical.
 - Never configure an unbounded wake retry count.
-- For shared-agent dispatch, create one immutable manifest per attempt, record
-  each worker's exact `$CODEX_THREAD_ID`, verify the transcript path, and run
-  `status` once before the bootstrap turn exits.
+- For campaign shared-agent dispatch, use fresh ephemeral workers by default;
+  verify the persistent dispatcher and supervisor identity before bootstrap
+  exits. Record a thread and transcript only for the opt-in resume adapter.
 - Publish only bounded node-local requests. Source changes, asset publication,
   attempt advancement, and scientific decisions stay with the coordinator.
 

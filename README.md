@@ -16,9 +16,9 @@ then resume an exact Codex thread, invoke an explicit agent resume command,
 inject into a verified tmux TUI, or write a durable event inbox.
 
 The shared-filesystem Agent workflow provides coordinator-first bootstrap,
-exact-thread worker dispatch, atomic request/ACK/result records, fencing,
-bounded repair, and token-free monitoring for Agents that cannot message one
-another directly.
+persistent stateless worker dispatch, optional exact-thread compatibility,
+atomic request/ACK/result records, fencing, bounded repair, and token-free
+monitoring for Agents that cannot message one another directly.
 
 The multi-node workflow treats topology, launch coordination, and external
 assets/services as separate contracts. It provides fail-closed staging,

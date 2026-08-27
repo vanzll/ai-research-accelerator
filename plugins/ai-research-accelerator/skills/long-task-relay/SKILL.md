@@ -103,17 +103,19 @@ workflow, first-mile order, authority model, message schema, and evidence
 semantics. This section defines only the repeated delivery primitive.
 
 For an explicit multi-node coordinator-worker workflow, Node 0 may remain in
-Goal mode while each worker uses an ordinary Codex thread plus a token-free
-dispatcher. Node 0 atomically publishes a bounded structured request; the
-dispatcher validates its sender, target, attempt, nonce, contract hash, and
-fencing epoch before running `codex exec resume THREAD_ID -`. It writes an ACK
-and terminal result, deduplicates request IDs, then returns to filesystem
-waiting without consuming model tokens.
+Goal mode while each node uses a campaign-scoped token-free dispatcher. Node 0
+atomically publishes a bounded structured request; the dispatcher validates
+its sender, target, attempt, nonce, contract hash, and fencing epoch before
+launching a fresh ephemeral Codex worker by default. It writes an ACK and
+terminal result, deduplicates request IDs, then returns to filesystem waiting
+without consuming model tokens. Exact-thread resume is an explicit
+compatibility adapter, not the default architecture.
 
-The worker bootstrap must start the dispatcher from its own ordinary thread
-using `$CODEX_THREAD_ID`, verify `status=watching`, and then end the turn. Do
-not start a worker Goal and do not attach this dispatcher to the coordinator
-Goal. The desired lifecycle is campaign-scoped: preserve one worker dispatcher
+The worker bootstrap must start the dispatcher under a durable node-local
+owner, verify `agent_mode=fresh`, process identity, and `status=watching`, then
+end the bootstrap turn. It must not record a TUI thread in fresh mode. Do not
+start a worker Goal and do not attach this dispatcher to the coordinator Goal.
+The desired lifecycle is campaign-scoped: preserve one worker dispatcher
 across retry attempts and isolate request data beneath immutable attempt paths.
 If the installed dispatcher still accepts only one attempt root, treat it as a
 compatibility implementation and perform make-before-break handoff to the next
@@ -129,15 +131,15 @@ not merely create a waiter for future code.
 The script must place the dispatcher under a durable owner independent of the
 agent turn, such as tmux, a scheduler, or a service manager. It may end only
 after all acceptance checks hold together: `state.json` exists, the recorded
-PID/start identity matches the exact dispatcher and thread/config, the process
-is alive under its durable owner, and `status=watching`. A live bootstrap PID,
+PID/start identity matches the exact dispatcher and adapter config, the process
+is alive under its durable owner, `agent_mode=fresh`, and `status=watching`. A live bootstrap PID,
 `waiting`, `waiting-for-tool`, a tmux pane without the dispatcher, or a log line
 is not acceptance. The bus cannot repair its own missing dispatcher, so
 bootstrap failure must remain in the foreground worker turn until fixed or
 explicitly reported; otherwise an external actor must re-enter that worker.
 
 Use `campaign-init`, then `campaign-activate`, and start each worker with
-`campaign-start` against the stable campaign root. Node 0 continues to publish
+`campaign-start --agent-mode fresh` against the stable campaign root. Node 0 continues to publish
 requests to the active attempt root. Future attempts require only a new
 attempt-level `init` plus a fenced `campaign-activate`; workers stay alive and
 adopt it automatically. Reserve attempt-scoped `start` for compatibility with

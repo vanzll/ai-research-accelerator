@@ -4,6 +4,7 @@ import argparse
 import importlib.util
 import json
 import os
+import subprocess
 import tempfile
 import threading
 import time
@@ -150,6 +151,7 @@ def make_fake_codex(root: Path) -> Path:
     path.write_text(
         """#!/usr/bin/env python3
 import json
+import os
 import pathlib
 import sys
 
@@ -159,6 +161,8 @@ prompt = sys.stdin.read()
 request = next(line for line in prompt.splitlines() if line.startswith('Request: ')).split(': ', 1)[1]
 output.parent.mkdir(parents=True, exist_ok=True)
 output.write_text(json.dumps({'status': 'succeeded', 'summary': 'handled ' + request, 'evidence_paths': []}))
+(output.parent / ('argv-' + request + '.json')).write_text(json.dumps(args))
+(output.parent / ('env-' + request + '.json')).write_text(json.dumps({'CODEX_HOME': os.environ.get('CODEX_HOME')}))
 with (output.parent / 'invocations.log').open('a') as handle:
     handle.write(request + '\\n')
 """,
@@ -215,16 +219,147 @@ class SharedAgentDispatcherTests(unittest.TestCase):
         return argparse.Namespace(
             root=str(campaign),
             node="node1",
-            thread_id="thread-1",
-            session_path=str(make_idle_transcript(campaign)),
+            agent_mode="fresh",
+            thread_id=None,
+            session_path=None,
             workdir=str(campaign),
             codex_path=str(codex_path),
+            codex_home=None,
+            codex_arg=[],
             poll_interval=0.1,
             task_timeout=30,
             thread_quiet_seconds=1,
             thread_idle_timeout=30,
             restart_backoff=0.1,
         )
+
+    def test_campaign_defaults_to_fresh_ephemeral_workers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = initialize_campaign_fixture(Path(directory))
+            campaign = fixture["campaign"]
+            attempt = fixture["attempt"]
+            args = self.campaign_start_args(fixture, make_fake_codex(campaign))
+            codex_home = campaign / "fresh-codex-home"
+            codex_home.mkdir()
+            args.codex_home = str(codex_home)
+            MODULE.start_campaign_dispatcher(args)
+            publish(attempt, "stateless request", "fresh-worker")
+            result_path = attempt / "results" / "node1" / "fresh-worker.json"
+            wait_until(result_path.exists)
+            argv = json.loads(
+                (
+                    attempt
+                    / "dispatcher"
+                    / "node1"
+                    / "agent-results"
+                    / "argv-fresh-worker.json"
+                ).read_text()
+            )
+            self.assertIn("--ephemeral", argv)
+            self.assertIn("--skip-git-repo-check", argv)
+            self.assertNotIn("resume", argv)
+            environment = json.loads(
+                (
+                    attempt
+                    / "dispatcher"
+                    / "node1"
+                    / "agent-results"
+                    / "env-fresh-worker.json"
+                ).read_text()
+            )
+            self.assertEqual(environment["CODEX_HOME"], str(codex_home.resolve()))
+            state = MODULE.read_json(MODULE.dispatcher_state_path(campaign, "node1"))
+            self.assertEqual(state["agent_mode"], "fresh")
+            self.assertIsNone(state["thread_id"])
+            self.assertIsNone(state["session_path"])
+            MODULE.stop_campaign_dispatcher(
+                argparse.Namespace(root=str(campaign), node="node1", timeout=5)
+            )
+
+    def test_campaign_resume_adapter_remains_explicit_and_supported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = initialize_campaign_fixture(Path(directory))
+            campaign = fixture["campaign"]
+            attempt = fixture["attempt"]
+            args = self.campaign_start_args(fixture, make_fake_codex(campaign))
+            args.agent_mode = "resume"
+            args.thread_id = "thread-1"
+            args.session_path = str(make_idle_transcript(campaign))
+            MODULE.start_campaign_dispatcher(args)
+            publish(attempt, "resume request", "resume-worker")
+            result_path = attempt / "results" / "node1" / "resume-worker.json"
+            wait_until(result_path.exists)
+            argv = json.loads(
+                (
+                    attempt
+                    / "dispatcher"
+                    / "node1"
+                    / "agent-results"
+                    / "argv-resume-worker.json"
+                ).read_text()
+            )
+            self.assertIn("resume", argv)
+            self.assertIn("thread-1", argv)
+            self.assertNotIn("--ephemeral", argv)
+            MODULE.stop_campaign_dispatcher(
+                argparse.Namespace(root=str(campaign), node="node1", timeout=5)
+            )
+
+    def test_campaign_start_waits_for_live_supervisor_state_race(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = initialize_campaign_fixture(Path(directory))
+            campaign = fixture["campaign"]
+            args = self.campaign_start_args(fixture, make_fake_codex(campaign))
+            config = MODULE.campaign_dispatcher_config(args)
+            supervisor_path = MODULE.campaign_supervisor_state_path(
+                campaign, "node1"
+            )
+            dispatcher_path = MODULE.dispatcher_state_path(campaign, "node1")
+            MODULE.atomic_replace_json(
+                supervisor_path,
+                {
+                    **config,
+                    "campaign_id": "CAMPAIGN-1",
+                    "instance_id": "supervisor-instance",
+                    "dispatcher_instance_id": "dispatcher-instance",
+                    "pid": os.getpid(),
+                    "process_start_token": MODULE.process_start_token(os.getpid()),
+                    "status": "supervising",
+                },
+            )
+
+            def publish_dispatcher_state():
+                time.sleep(0.2)
+                MODULE.atomic_replace_json(
+                    dispatcher_path,
+                    {
+                        "instance_id": "dispatcher-instance",
+                        "status": "watching",
+                    },
+                )
+
+            writer = threading.Thread(target=publish_dispatcher_state)
+            writer.start()
+            with mock.patch.object(
+                MODULE, "campaign_supervisor_process_matches", return_value=True
+            ), mock.patch.object(
+                MODULE, "dispatcher_process_matches", return_value=True
+            ), mock.patch.object(subprocess, "Popen") as popen:
+                MODULE.start_campaign_dispatcher(args)
+            writer.join(timeout=2)
+            self.assertFalse(writer.is_alive())
+            popen.assert_not_called()
+
+    def test_worker_agent_config_rejects_reserved_codex_arguments(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = initialize_campaign_fixture(Path(directory))
+            args = self.campaign_start_args(
+                fixture, make_fake_codex(fixture["campaign"])
+            )
+            for reserved in ("--output-schema", "--output-schema=/tmp/replace", "--"):
+                args.codex_arg = [reserved]
+                with self.assertRaisesRegex(ValueError, "reserved Codex argument"):
+                    MODULE.campaign_dispatcher_config(args)
 
     def test_process_matching_honors_omitted_default_instance_id(self):
         root = Path("/tmp/campaign-default-instance").resolve()

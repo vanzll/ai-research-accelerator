@@ -65,7 +65,8 @@ watcher merely to re-prove evidence already frozen elsewhere.
 Load `shared-filesystem-agent-coordination` before designing remote-Agent
 prompts, a shared-file message bus, or an autonomous repair loop. It owns the
 general coordinator/worker topology, first-mile bootstrap, request/ACK/result
-protocol, exact-thread relays, monitoring, and closure rules.
+protocol, stateless worker execution, optional resume adapters, monitoring, and
+closure rules.
 
 For training, freeze a machine-readable scientific contract before granting
 repair authority. It must cover the algorithm/objective, model and reward
