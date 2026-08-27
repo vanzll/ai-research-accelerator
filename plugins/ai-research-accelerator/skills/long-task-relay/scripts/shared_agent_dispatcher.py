@@ -449,7 +449,14 @@ def initialize_campaign(args: argparse.Namespace) -> int:
         if active_path.exists():
             existing_active = read_json(active_path)
             if existing_active.get("root") != str(root):
-                raise ValueError("another agent campaign already owns this authority root")
+                previous_root = Path(existing_active["root"]).expanduser().resolve()
+                previous_campaign = load_campaign_manifest(previous_root)
+                try:
+                    validate_goal_completed(previous_root, previous_campaign)
+                except (FileNotFoundError, KeyError, ValueError) as error:
+                    raise ValueError(
+                        "another agent campaign already owns this authority root"
+                    ) from error
         atomic_replace_json(active_path, active_payload)
         for node in nodes:
             (root / "dispatcher" / node).mkdir(parents=True, exist_ok=True)

@@ -619,6 +619,65 @@ class SharedAgentDispatcherTests(unittest.TestCase):
                     )
             self.assertFalse(MODULE.campaign_goal_completed_path(campaign).exists())
 
+    def test_completed_campaign_releases_authority_for_a_new_campaign(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = initialize_campaign_fixture(Path(directory))
+            campaign = fixture["campaign"]
+            attempt = fixture["attempt"]
+            with mock.patch.dict(
+                os.environ, {"CODEX_THREAD_ID": "test-coordinator-thread"}
+            ):
+                MODULE.complete_campaign(
+                    argparse.Namespace(
+                        root=str(campaign),
+                        expected_attempt_root=str(attempt),
+                        expected_attempt="A2",
+                        expected_launch_nonce="nonce-a2",
+                        expected_fencing_epoch=2,
+                        summary="first campaign complete",
+                        evidence_path=[],
+                    )
+                )
+                next_campaign = fixture["authority"].parent / "campaign-next"
+                MODULE.initialize_campaign(
+                    argparse.Namespace(
+                        root=str(next_campaign),
+                        authority_root=str(fixture["authority"]),
+                        attempts_root=str(fixture["attempts"]),
+                        campaign_id="CAMPAIGN-2",
+                        science_contract_hash="b" * 64,
+                        coordinator_node="node0",
+                        coordinator_thread_id="test-coordinator-thread",
+                        node=fixture["common"]["node"],
+                        allow_host_mismatch=False,
+                    )
+                )
+            active = MODULE.read_json(
+                fixture["authority"] / "active-agent-campaign.json"
+            )
+            self.assertEqual(active["root"], str(next_campaign.resolve()))
+            self.assertEqual(active["campaign_id"], "CAMPAIGN-2")
+
+    def test_incomplete_campaign_keeps_authority_fenced(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = initialize_campaign_fixture(Path(directory))
+            with mock.patch.dict(
+                os.environ, {"CODEX_THREAD_ID": "test-coordinator-thread"}
+            ), self.assertRaisesRegex(ValueError, "already owns"):
+                MODULE.initialize_campaign(
+                    argparse.Namespace(
+                        root=str(fixture["authority"].parent / "campaign-next"),
+                        authority_root=str(fixture["authority"]),
+                        attempts_root=str(fixture["attempts"]),
+                        campaign_id="CAMPAIGN-2",
+                        science_contract_hash="b" * 64,
+                        coordinator_node="node0",
+                        coordinator_thread_id="test-coordinator-thread",
+                        node=fixture["common"]["node"],
+                        allow_host_mismatch=False,
+                    )
+                )
+
     def test_campaign_completion_drains_active_turn_and_never_starts_queued_work(self):
         with tempfile.TemporaryDirectory() as directory:
             fixture = initialize_campaign_fixture(Path(directory))
