@@ -16,6 +16,14 @@ document. The default topology is a star:
 
 This creates command-and-report collaboration, not unrestricted peer chat.
 
+Keep durable control artifacts separate by purpose. The protected task
+contract is immutable; campaign identity is stable across retries; the active
+attempt and fencing epoch are dynamic; each request and result is immutable and
+schema-versioned. Existing project runbooks and progress documents may provide
+human context, but they are not mandatory bus state. Prompts should name the
+canonical contract, authority, and requested action instead of copying stale
+attempt history or re-encoding the protocol in prose.
+
 ## Assign control ownership
 
 Use Goal mode only for the coordinator's bounded objective. Worker execution is
@@ -86,8 +94,8 @@ The first-mile logical order is mandatory:
    `process_alive=true`, `agent_mode=fresh`, and `status=watching`.
 4. The coordinator runs two harmless `publish -> spawn -> result -> watching`
    round trips per worker, proving first delivery and re-arming. Repeat this
-   only when dispatcher code, host/adapter registration, or campaign authority
-   changes, not for every attempt.
+   only when dispatcher code, process generation, host/adapter registration, or
+   campaign authority changes, not for every attempt.
 5. Only after every worker passes may the workflow publish real tasks.
 
 A bootstrap PID, `waiting`, `waiting-for-tool`, a tmux pane without the target
@@ -114,6 +122,14 @@ Delivery is at-least-once; processing must be idempotent. A request retry uses
 a new request ID. If an accepted request loses its Agent before a terminal
 result, report `needs_coordinator` rather than replaying an unknown side effect.
 Watchers validate requests but never execute request text as shell code.
+
+Prefer versioned deterministic scripts for recurring preflight, launch,
+validation, and result consolidation. Agents may interpret evidence and repair
+authorized bugs, but they should not independently recreate parsers or infer
+undocumented JSON fields on every node. Validators must consume the current
+active-attempt record, compare canonical paths or content hashes, and emit one
+schema-valid result. They must not hard-code a retry number or make runtime
+truth conform to stale validator assumptions.
 
 The default threat model trusts the shared storage writers and uses immutable
 records plus host, process identity, nonce, contract, and epoch validation. If unrelated
@@ -187,6 +203,12 @@ Monitor heartbeats, inbox depth, claims, ACKs, results, invocation identity,
 and stale/failure events mechanically. Wake an Agent only for an actionable
 request or anomaly. Historical failures remain preserved but are scoped by the
 active attempt, fencing epoch, and expected request IDs.
+
+Keep long-running domain observation out of worker invocations. A `start`
+request should prove that the exact owned process launched and then return;
+token-free watchers observe milestones and wake the coordinator for judgment.
+Do not keep a fresh worker Agent alive until an experiment, deployment, or
+other scientific acceptance gate finishes.
 
 Read [protocol.md](references/protocol.md) before implementing a production
 bus, autonomous repair loop, or remote-Agent prompt. Use `long-task-relay`'s

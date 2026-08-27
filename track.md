@@ -358,3 +358,30 @@
   host, and `campaign-stop` refuses remote-host PID control. Worker-local
   short-TTL attestations plus end-to-end request results are the coordinator's
   remote readiness evidence. This correction is released as `0.6.1`.
+
+## 2026-08-27 - Distill the first successful 32-rank campaign lessons
+
+- Reviewed the persisted Flow-ART retrospective after the stateless Agent Bus
+  reached a real four-host, 32-rank rollout. Kept the evidence boundary clear:
+  Agent coordination and rollout infrastructure worked, while finite optimizer
+  updates and scientific acceptance remained unproven.
+- Separated durable control artifacts by role: immutable protected task contract,
+  campaign identity, dynamic active attempt/fencing state, bounded request,
+  and versioned result schema. Existing runbooks and progress documents remain
+  optional human context. Prompts now refer to canonical authority instead of
+  duplicating stale attempt lore.
+- Required one pinned deterministic preflight/validator implementation. Worker
+  Agents interpret and repair evidence but do not recreate parsers or hard-code
+  retry numbers; validators compare current authority plus canonical identity
+  or content hashes.
+- Split worker actions into quick preflight/start results and token-free domain
+  observation. A fresh Agent no longer waits for a long evaluation or
+  optimizer-step acceptance after it has proved the exact process launched.
+- Added reusable bus acceptance keyed to dispatcher tool, durable owner, host,
+  adapter, campaign authority, and live dispatcher generation so unchanged task
+  retries do not pay for repeated Agent transport smoke while restarts are
+  revalidated.
+- Added mechanism-neutral code reachability validation through the wrapper's
+  actual staging/import path, progress-aware collective deadlines, TOCTOU-safe
+  process cleanup, and phase-specific co-located reward/trainer memory analysis.
+- Raised synchronized Codex and Claude plugin manifests to `0.6.2`.

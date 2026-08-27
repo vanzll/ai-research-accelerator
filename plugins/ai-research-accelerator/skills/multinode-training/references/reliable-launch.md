@@ -75,6 +75,35 @@ Every record should be atomic JSON or equivalent structured data, not an unquali
 
 Include relevant asset-manifest hash, config hash, service endpoint, process-group ID, or W&B run ID at later stages. Readers must reject stale records whose experiment ID, attempt, nonce, commit, or expected hostname does not match. Mutable heartbeats may supplement milestones, but must never erase already established facts.
 
+## Code staging and validator contract
+
+Publishing code means proving that every worker can obtain the exact immutable
+artifact through the same staging path the formal wrapper will use. Before GPU
+release:
+
+1. identify the actual mechanism: Git ref, source bundle, container image,
+   scheduler package, shared worktree, or copied tree;
+2. publish an immutable identity containing every runner and training artifact;
+3. exercise that mechanism in each distinct worker credential/network domain,
+   or reuse fresh evidence whose artifact, path, and domain identities match;
+4. verify submodules, nested repositories, image digest, or bundle manifest when
+   the wrapper uses them;
+5. verify the final checkout/import path consumed by the wrapper, not merely a
+   coordinator staging location;
+6. record the staging probe and artifact/contract hashes.
+
+For Git, a fresh clone or fetch followed by detached checkout is the strongest
+reachability probe. `git cat-file -e` proves only that one object database
+contains an object. Equivalent non-Git flows should verify their own immutable
+digest and extraction/import path instead of being forced through Git.
+
+Keep one pinned preflight implementation and a versioned result schema in Git.
+Agents run it and interpret its result; do not ask every worker to construct a
+new parser in its prompt. Validators read attempt and fencing values from the
+active authority record, compare canonical paths or content hashes, and reject
+unknown schemas. Retry state must advance the validator's dynamic input, not
+require edits to a hard-coded attempt number.
+
 ## Asset protocol
 
 ### Discover and import before download
@@ -123,6 +152,12 @@ Reward models, data servers, and evaluators often run once per node. For each se
 - verify the application endpoint returns a valid response;
 - refresh a heartbeat or expose a health endpoint;
 - clean up only processes owned by the current attempt.
+
+Process scans are inherently TOCTOU-racy. If a PID disappears between listing
+and reading `/proc/<pid>`, do not fail teardown solely on `ESRCH`; record an
+unexpected earlier exit when applicable and verify that no owned descendants or
+process-group members remain. Still fail on a live process whose identity or
+ownership does not match.
 
 Treat the service process as a hard environment boundary. Remove training-only
 rendezvous variables such as `RANK`, `WORLD_SIZE`, `LOCAL_RANK`,
@@ -186,6 +221,16 @@ Report payload or algorithmic bandwidth separately from NCCL bus bandwidth;
 their conversion depends on collective and world size. Run the probe in an
 owned process group so cancellation, timeout, or peer failure cannot leave
 workers holding GPUs or rendezvous ports.
+
+Use separate no-progress and absolute deadlines. Refresh progress only from
+meaningful evidence such as completed phases, new rank joins, or structured
+communicator activity; ordinary log noise is insufficient. A second clean
+process-group construction can expose intermittent initialization failures and
+should be retained when that is the risk being tested, but it need not be
+repeated for an unchanged, recently accepted transport identity. If progress
+continues, allow the predeclared hard deadline rather than killing at the short
+stall threshold. If no progress occurs, fail early and preserve the last phase.
+Do not respond to a premature timeout by deleting the validating round.
 
 Never copy an interface name from another backend or cluster without checking that it exists on every target host. If the probe falls back to TCP when RDMA is required, fail before model loading. If it selects RDMA but remains intermittently slow, verify the loaded NCCL/KCCL implementation before cycling through HCA, QP, traffic-class, or GID tuning. After transport is correct, profile the parallel mesh separately; do not conflate a transport failure with an FSDP topology decision.
 

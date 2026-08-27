@@ -27,8 +27,10 @@ Use one-writer paths instead of a shared Markdown control document:
 
 ```text
 coordination/TASK/
+  protected-task-contract.json
   campaign-manifest.json
   campaign-terminal.json
+  result-schema.json
   dispatcher/node1/state.json
   active-attempt.json
   attempts/A2/
@@ -97,6 +99,14 @@ the dispatcher implementation, worker host identity, execution adapter, or
 campaign authority changes. A new TUI conversation is irrelevant in fresh
 mode.
 
+Cache successful delivery acceptance by the dispatcher tool hash, durable
+owner identity, worker host, execution adapter, and campaign authority. Reuse
+it across task attempts only while a fresh node-local health attestation proves
+the current dispatcher generation and process identity. A supervisor restart
+invalidates process-level acceptance and requires the harmless delivery checks
+again. Do not spend Agent invocations re-proving an unchanged healthy transport
+on every retry.
+
 ## Worker execution adapters
 
 Use `fresh` by default. For every accepted request, the persistent dispatcher
@@ -148,6 +158,30 @@ its persisted process identity, `process_alive`, `status`, and
 a live idle watcher may be closed only after its successor is accepted; a live
 busy watcher blocks handoff until its request reaches terminal state. This
 prevents both false migration failures and concurrent exact-thread resumes.
+
+## Design bounded actions and validators
+
+Keep requests small enough to have one unambiguous completion predicate:
+
+- `preflight` runs a pinned, read-only script and returns a versioned result;
+- `start` launches the exact owned process, verifies early local identity, and
+  returns `launched` without waiting for the domain task to finish;
+- a token-free watcher observes process and milestone evidence;
+- `diagnose` or `repair` wakes an Agent only when evidence requires judgment.
+
+The coordinator owns shared validator code. Workers execute the same pinned
+implementation rather than generating node-specific parsers in prompts. A
+validator must read dynamic attempt and fencing values from the authority
+record, validate explicit schema versions, compare canonical identities or
+content hashes, and reject unknown fields conservatively. It must not hard-code
+the current retry, assume an undocumented evidence shape, or compare a symlink
+spelling when the runtime intentionally canonicalizes the path.
+
+Keep prompts thin: identify the role, canonical contract, active authority,
+request, result schema, deterministic command, permissions, and stopping rule.
+When the project maintains a progress document or runbook, put historical
+incidents and operational explanation there; neither belongs duplicated inside
+every request. These human documents are optional and are not bus authority.
 
 ## Request lifecycle
 

@@ -30,6 +30,10 @@ Before editing code or allocating GPUs, write down and mechanically validate:
 - local microbatch, gradient accumulation, global batch, prompt/group layout, and optimizer-step semantics;
 - model, dataset, tokenizer, reward model, and auxiliary-service asset roots plus immutable revisions or manifests;
 - checkpoint/evaluation schedule, retention, W&B identity, and success criteria;
+- placement and estimated phase-specific memory budget for applicable
+  reward/evaluation services, model decoding, rollout, backward, optimizer, and
+  checkpointing; refine it with measured representative peaks before increasing
+  a configuration to the memory limit;
 - owner and cleanup behavior for every process, port, temporary directory, and resource lease.
 
 Fail closed when a required value is implicit, inconsistent, or node-specific without being declared. Do not silently choose a different batch size, model path, network interface, precision, or microbatch after launch.
@@ -59,6 +63,12 @@ node wrapper, and one deterministic supervisor. A new gate is justified only
 when it catches a distinct expensive failure before that failure can occur.
 Do not duplicate parsers, nest smoke-to-formal promotion controllers, or add a
 watcher merely to re-prove evidence already frozen elsewhere.
+
+Commit recurring preflight and consolidation logic as deterministic scripts
+with versioned result schemas. Remote Agents execute and interpret those
+scripts; they do not each improvise a parser for the same evidence. Keep
+immutable science fields separate from dynamic attempt/fencing state so a valid
+retry is not rejected by a stale hard-coded validator.
 
 ## AI-assisted repair and node collaboration
 
@@ -110,11 +120,21 @@ attempt-scoped. Failure or idle states do not authorize dispatcher shutdown.
 - Establish an owned worker process group through a child handshake or bounded polling. Never make cleanup correctness depend on one immediate PID/PGID observation after `setsid` or a background fork.
 - On any node failure, terminate the whole worker group unless the framework's elastic recovery semantics were deliberately designed and tested.
 - Preserve failed attempt evidence. Retry with a new attempt and nonce after repairing the cause; do not overwrite ambiguous lineage.
+- Before relying on frozen code on multiple nodes, prove reachability and
+  identity through the launcher's actual staging path in every distinct worker
+  credential/network domain. For Git staging, a successful local `git cat-file`
+  is insufficient; for containers, bundles, shared worktrees, or copied trees,
+  verify the corresponding immutable artifact and the wrapper's actual import
+  path.
 - Implement experiment-ID parsing, contract validation, and identity derivation once and test multi-digit attempts. Duplicated outer/inner validators create contradictory control planes.
 - Treat a missing manifest as "not yet verified," not "asset missing." Before any download, discover declared existing asset roots, validate compatible files against the pinned revision/index/checksums, and import or link them into the immutable layout. Download only files that are absent or invalid.
 - Record both the logical parallel mesh and its physical placement. Full-world FSDP can turn a transport mistake into per-layer cross-node stalls; compare it with node-local sharding plus cross-node replication only after transport correctness is established.
 - Do not trade throughput for serialized algorithm equivalence unless the user explicitly asks to reproduce a larger logical batch or topology with fewer resources. Otherwise preserve the fastest correct parallel execution supported by the frozen protocol.
 - Persist rank-prefixed runtime output from the first process launch. Use tensor collectives for transport measurements and structured per-rank records for diagnostics; do not use Python object collectives or interleaved multi-rank stdout as a bandwidth oracle.
+- Treat process enumeration as racy: a PID may exit between discovery and
+  `/proc` inspection. `ESRCH` is an idempotent teardown no-op, but preserve any
+  evidence of an unexpected prior exit and verify that the complete owned
+  process group is empty; identity mismatches remain errors.
 - Decouple tracker startup from expensive evaluation. Immediately after tracker initialization, log a lightweight identity/telemetry row and persist its local commit evidence before starting step-zero evaluation. An evaluation-duration timeout or delayed cloud history must not be interpreted as training failure.
 
 ## Asset preparation contract

@@ -143,6 +143,15 @@ For a throughput probe, a finite slow step is a result, not a failed health
 gate. Use a wide timeout only to distinguish progress from a genuine hang, and
 collect enough post-warmup steps to compare medians.
 
+For a co-located reward/evaluation service, first measure representative
+worst-shape requests and trainer decode/first-backward peaks on the same device.
+Record steady and peak allocated/reserved memory; a smaller standalone model
+size does not establish co-location headroom. Escalate to the exact full request
+count when validating cumulative cache growth, fragmentation, or cleanup, and
+only after the basic throughput path is healthy. Retain margin for the largest
+transient allocation; rollout completion alone is not evidence that reward
+processing or backward will fit.
+
 ## Failure report
 
 A useful report states:
