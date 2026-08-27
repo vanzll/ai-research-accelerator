@@ -305,3 +305,26 @@
   safe waiting; abnormal process death is supervisor-restarted rather than
   interpreted as Goal completion.
 - Raised the synchronized plugin version to `0.4.1`.
+
+## 2026-08-27 - Implement campaign-persistent Agent dispatchers
+
+- Added a real campaign control layer to `shared_agent_dispatcher.py` instead
+  of relying on attempt-scoped lifecycle prose: immutable campaign manifest,
+  compare-and-swap active attempt, stable worker state, durable restart
+  supervisor, and fenced `GOAL_COMPLETED` closure.
+- Attempt terminals now return the same dispatcher process to `watching`.
+  A2-to-A3 adoption preserves worker thread and dispatcher identity; stale or
+  invalid attempt pointers enter a non-executing wait rather than exiting.
+- Bound Goal completion to the expected final root, attempt, nonce, contract,
+  Node 0 host/thread, and fencing epoch. Completion drains active Agent work,
+  prevents queued work from starting, and blocks later publish, activation, or
+  supervisor restart.
+- Added campaign binding records so attempt-level publish rejects a completed
+  campaign. Fixed attempt publication order so an immutable manifest exists
+  before authority advances.
+- Added regression coverage for cross-attempt persistence, invalid-pointer
+  recovery, abnormal dispatcher restart, stale compare-and-swap rejection, and
+  active/queued completion races. Preserved all existing attempt-level tests.
+- Clarified that host/thread/epoch checks are identity fencing under a trusted
+  shared-filesystem threat model; untrusted writers require ACLs or signatures.
+- Raised the synchronized plugin version to `0.5.0`.

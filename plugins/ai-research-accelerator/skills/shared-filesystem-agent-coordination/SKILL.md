@@ -39,8 +39,8 @@ requests, claims, ACKs, results, and terminal evidence under immutable
 attempt-specific paths.
 
 An attempt terminal returns the dispatcher to `watching`. Its only normal exit
-condition is an authenticated, fenced `GOAL_COMPLETED` directive explicitly
-published by the Node 0 coordinator. Request failure, attempt failure, idle
+condition is a fenced `GOAL_COMPLETED` directive explicitly published by the
+exact Node 0 host and Goal thread. Request failure, attempt failure, idle
 time, workload exit, or temporary coordinator loss must not close it; enter a
 safe non-executing wait when authority is unavailable. The coordinator advances
 an atomic `active-attempt.json` and fencing epoch, and workers accept the new
@@ -86,6 +86,39 @@ Delivery is at-least-once; processing must be idempotent. A request retry uses
 a new request ID. If an accepted request loses its Agent before a terminal
 result, report `needs_coordinator` rather than replaying an unknown side effect.
 Watchers validate requests but never execute request text as shell code.
+
+The default threat model trusts the shared storage writers and uses immutable
+records plus host, thread, nonce, contract, and epoch validation. If unrelated
+or adversarial principals can write the bus, enforce filesystem ACLs or verify
+Node 0 signatures; matching JSON fields alone are not cryptographic
+authentication.
+
+## Use the campaign CLI
+
+The reviewed dispatcher separates stable campaign state from replaceable
+attempt buses:
+
+```bash
+python shared_agent_dispatcher.py campaign-init \
+  --root "$CAMPAIGN_ROOT" --authority-root "$AUTHORITY_ROOT" \
+  --attempts-root "$ATTEMPTS_ROOT" --campaign-id "$CAMPAIGN_ID" \
+  --science-contract-hash "$CONTRACT_SHA" \
+  --coordinator-thread-id "$NODE0_THREAD" \
+  --node node0=HOST0 --node node1=HOST1
+
+python shared_agent_dispatcher.py campaign-activate \
+  --root "$CAMPAIGN_ROOT" --attempt-root "$A3_ROOT" \
+  --expected-previous-epoch 2
+
+python shared_agent_dispatcher.py campaign-start \
+  --root "$CAMPAIGN_ROOT" --node node1 \
+  --thread-id "$WORKER_THREAD" --workdir "$WORKDIR"
+```
+
+`campaign-activate` is a compare-and-swap. The first activation expects epoch
+`-1`; later activations name the currently active epoch. Goal closure also
+requires the expected final root, attempt, nonce, and epoch. Do not use the old
+attempt-scoped `start` command for a new campaign.
 
 ## Interpret evidence correctly
 

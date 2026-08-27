@@ -133,30 +133,20 @@ is not acceptance. The bus cannot repair its own missing dispatcher, so
 bootstrap failure must remain in the foreground worker turn until fixed or
 explicitly reported; otherwise an external actor must re-enter that worker.
 
-```bash
-python shared_agent_dispatcher.py init \
-  --root "$ATTEMPT_ROOT" --authority-root "$COORDINATION_FAMILY_ROOT" \
-  --experiment-id "$EXP" --attempt A2 \
-  --launch-nonce "$NONCE" --science-contract-hash "$CONTRACT_SHA" \
-  --fencing-epoch 2 --coordinator-thread-id "$CODEX_THREAD_ID" \
-  --node node0=HOST0 --node node1=HOST1
-
-python shared_agent_dispatcher.py start \
-  --root "$ATTEMPT_ROOT" --node node1 \
-  --thread-id "$CODEX_THREAD_ID" --workdir "$REPO"
-
-python shared_agent_dispatcher.py publish \
-  --root "$ATTEMPT_ROOT" --target node1 --action start-node \
-  --message-file /path/to/request.txt \
-  --completion-predicate 'node1 writes ready or failure evidence'
-```
+Use `campaign-init`, then `campaign-activate`, and start each worker with
+`campaign-start` against the stable campaign root. Node 0 continues to publish
+requests to the active attempt root. Future attempts require only a new
+attempt-level `init` plus a fenced `campaign-activate`; workers stay alive and
+adopt it automatically. Reserve attempt-scoped `start` for compatibility with
+old campaigns.
 
 The dispatcher treats accepted-but-incomplete work conservatively: it records
 `needs_coordinator` and requires a new request ID rather than replaying an
 unknown side effect. It does not execute request text as shell code; an idle
 worker agent interprets one bounded request under the frozen contract.
 The only normal dispatcher shutdown is a fenced `GOAL_COMPLETED` directive from
-the exact Node 0 coordinator. Attempt or request failure, idle time, workload
+the exact Node 0 host and Goal thread, compare-and-swapped against the expected
+final attempt identity. Attempt or request failure, idle time, workload
 exit, and temporary coordinator loss never authorize close; remain alive in a
 safe waiting state. A durable owner restarts abnormal dispatcher exits. For an
 attempt-scoped compatibility dispatcher, start and validate its successor

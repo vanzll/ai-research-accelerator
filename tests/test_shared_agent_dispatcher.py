@@ -61,6 +61,73 @@ def publish(root: Path, message: str, request_id: str) -> Path:
     return next((root / "inbox" / "node1").glob(f"*{request_id}.json"))
 
 
+def wait_until(predicate, timeout: float = 10) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.05)
+    raise AssertionError("condition did not become true before timeout")
+
+
+def initialize_campaign_fixture(base: Path) -> dict:
+    base = base.resolve()
+    authority = base / "authority"
+    attempts = base / "attempts"
+    campaign_root = base / "campaign"
+    common = {
+        "authority_root": str(authority),
+        "experiment_id": "EXP-1",
+        "science_contract_hash": "a" * 64,
+        "coordinator_node": "node0",
+        "coordinator_thread_id": "test-coordinator-thread",
+        "node": [
+            ("node0", MODULE.short_hostname()),
+            ("node1", MODULE.short_hostname()),
+        ],
+        "allow_host_mismatch": False,
+    }
+    with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "test-coordinator-thread"}):
+        MODULE.initialize_campaign(
+            argparse.Namespace(
+                root=str(campaign_root),
+                authority_root=str(authority),
+                attempts_root=str(attempts),
+                campaign_id="CAMPAIGN-1",
+                science_contract_hash="a" * 64,
+                coordinator_node="node0",
+                coordinator_thread_id="test-coordinator-thread",
+                node=common["node"],
+                allow_host_mismatch=False,
+            )
+        )
+    attempt = attempts / "A2"
+    MODULE.initialize_bus(
+        argparse.Namespace(
+            root=str(attempt),
+            attempt="A2",
+            launch_nonce="nonce-a2",
+            fencing_epoch=2,
+            **common,
+        )
+    )
+    with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "test-coordinator-thread"}):
+        MODULE.activate_campaign_attempt(
+            argparse.Namespace(
+                root=str(campaign_root),
+                attempt_root=str(attempt),
+                expected_previous_epoch=-1,
+            )
+        )
+    return {
+        "authority": authority,
+        "attempts": attempts,
+        "campaign": campaign_root,
+        "attempt": attempt,
+        "common": common,
+    }
+
+
 def make_idle_transcript(root: Path) -> Path:
     path = root / "session.jsonl"
     path.write_text(
@@ -143,6 +210,265 @@ with (output.parent / 'invocations.log').open('a') as handle:
 
 
 class SharedAgentDispatcherTests(unittest.TestCase):
+    def campaign_start_args(self, fixture: dict, codex_path: Path) -> argparse.Namespace:
+        campaign = fixture["campaign"]
+        return argparse.Namespace(
+            root=str(campaign),
+            node="node1",
+            thread_id="thread-1",
+            session_path=str(make_idle_transcript(campaign)),
+            workdir=str(campaign),
+            codex_path=str(codex_path),
+            poll_interval=0.1,
+            task_timeout=30,
+            thread_quiet_seconds=1,
+            thread_idle_timeout=30,
+            restart_backoff=0.1,
+        )
+
+    def test_campaign_dispatcher_survives_attempt_transition_and_only_goal_completes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = initialize_campaign_fixture(Path(directory))
+            campaign = fixture["campaign"]
+            first = fixture["attempt"]
+            args = self.campaign_start_args(fixture, make_fake_codex(campaign))
+            MODULE.start_campaign_dispatcher(args)
+            supervisor_path = MODULE.campaign_supervisor_state_path(campaign, "node1")
+            state_path = MODULE.dispatcher_state_path(campaign, "node1")
+            supervisor_pid = MODULE.read_json(supervisor_path)["pid"]
+            dispatcher_pid = MODULE.read_json(state_path)["pid"]
+
+            publish(first, "handle A2", "campaign-a2")
+            wait_until(lambda: (first / "results" / "node1" / "campaign-a2.json").exists())
+            with mock.patch.dict(
+                os.environ, {"CODEX_THREAD_ID": "test-coordinator-thread"}
+            ):
+                MODULE.close_bus(
+                    argparse.Namespace(
+                        root=str(first), status="abandoned", summary="retry A3"
+                    )
+                )
+            wait_until(
+                lambda: MODULE.read_json(state_path).get("active_attempt_terminal")
+                is True
+            )
+            self.assertEqual(MODULE.read_json(supervisor_path)["pid"], supervisor_pid)
+            self.assertEqual(MODULE.read_json(state_path)["pid"], dispatcher_pid)
+
+            second = fixture["attempts"] / "A3"
+            MODULE.initialize_bus(
+                argparse.Namespace(
+                    root=str(second),
+                    attempt="A3",
+                    launch_nonce="nonce-a3",
+                    fencing_epoch=3,
+                    **fixture["common"],
+                )
+            )
+            with mock.patch.dict(
+                os.environ, {"CODEX_THREAD_ID": "test-coordinator-thread"}
+            ):
+                MODULE.activate_campaign_attempt(
+                    argparse.Namespace(
+                        root=str(campaign),
+                        attempt_root=str(second),
+                        expected_previous_epoch=2,
+                    )
+                )
+            wait_until(
+                lambda: MODULE.read_json(state_path).get("active_attempt") == "A3"
+            )
+            self.assertEqual(MODULE.read_json(supervisor_path)["pid"], supervisor_pid)
+            self.assertEqual(MODULE.read_json(state_path)["pid"], dispatcher_pid)
+            publish(second, "handle A3", "campaign-a3")
+            wait_until(lambda: (second / "results" / "node1" / "campaign-a3.json").exists())
+
+            with mock.patch.dict(
+                os.environ, {"CODEX_THREAD_ID": "test-coordinator-thread"}
+            ):
+                MODULE.complete_campaign(
+                    argparse.Namespace(
+                        root=str(campaign),
+                        expected_attempt_root=str(second),
+                        expected_attempt="A3",
+                        expected_launch_nonce="nonce-a3",
+                        expected_fencing_epoch=3,
+                        summary="Goal achieved",
+                        evidence_path=[str(second / "results")],
+                    )
+                )
+            wait_until(
+                lambda: MODULE.read_json(state_path).get("status") == "goal-completed"
+            )
+            wait_until(lambda: not MODULE.process_alive(supervisor_pid))
+            with self.assertRaisesRegex(ValueError, "already completed"):
+                MODULE.start_campaign_dispatcher(args)
+            with self.assertRaisesRegex(ValueError, "already completed"):
+                publish(second, "must not run", "after-goal")
+
+    def test_campaign_dispatcher_waits_through_invalid_active_pointer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = initialize_campaign_fixture(Path(directory))
+            campaign = fixture["campaign"]
+            args = self.campaign_start_args(fixture, make_fake_codex(campaign))
+            MODULE.start_campaign_dispatcher(args)
+            state_path = MODULE.dispatcher_state_path(campaign, "node1")
+            dispatcher_pid = MODULE.read_json(state_path)["pid"]
+            active_path = MODULE.campaign_active_attempt_path(campaign)
+            valid = MODULE.read_json(active_path)
+            invalid = {**valid, "root": str(fixture["attempts"] / "missing")}
+            MODULE.atomic_replace_json(active_path, invalid)
+            wait_until(
+                lambda: MODULE.read_json(state_path).get("status")
+                == "waiting-for-active-attempt"
+            )
+            self.assertTrue(MODULE.process_alive(dispatcher_pid))
+            MODULE.atomic_replace_json(active_path, valid)
+            wait_until(
+                lambda: MODULE.read_json(state_path).get("status") == "watching"
+            )
+            self.assertEqual(MODULE.read_json(state_path)["pid"], dispatcher_pid)
+            MODULE.stop_campaign_dispatcher(
+                argparse.Namespace(root=str(campaign), node="node1", timeout=5)
+            )
+
+    def test_campaign_supervisor_restarts_crashed_dispatcher(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = initialize_campaign_fixture(Path(directory))
+            campaign = fixture["campaign"]
+            args = self.campaign_start_args(fixture, make_fake_codex(campaign))
+            MODULE.start_campaign_dispatcher(args)
+            supervisor_path = MODULE.campaign_supervisor_state_path(campaign, "node1")
+            state_path = MODULE.dispatcher_state_path(campaign, "node1")
+            supervisor_pid = MODULE.read_json(supervisor_path)["pid"]
+            first_dispatcher_pid = MODULE.read_json(state_path)["pid"]
+            os.kill(first_dispatcher_pid, 9)
+            wait_until(
+                lambda: MODULE.read_json(state_path).get("pid")
+                not in {None, first_dispatcher_pid}
+                and MODULE.dispatcher_process_matches(
+                    MODULE.read_json(state_path), campaign, "node1"
+                )
+            )
+            self.assertEqual(MODULE.read_json(supervisor_path)["pid"], supervisor_pid)
+            self.assertGreaterEqual(
+                int(MODULE.read_json(supervisor_path).get("restart_count", 0)), 1
+            )
+            MODULE.stop_campaign_dispatcher(
+                argparse.Namespace(root=str(campaign), node="node1", timeout=5)
+            )
+
+    def test_campaign_compare_and_swap_rejects_stale_close_and_activation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = initialize_campaign_fixture(Path(directory))
+            campaign = fixture["campaign"]
+            second = fixture["attempts"] / "A3"
+            MODULE.initialize_bus(
+                argparse.Namespace(
+                    root=str(second),
+                    attempt="A3",
+                    launch_nonce="nonce-a3",
+                    fencing_epoch=3,
+                    **fixture["common"],
+                )
+            )
+            with mock.patch.dict(
+                os.environ, {"CODEX_THREAD_ID": "test-coordinator-thread"}
+            ):
+                with self.assertRaisesRegex(ValueError, "compare-and-swap"):
+                    MODULE.activate_campaign_attempt(
+                        argparse.Namespace(
+                            root=str(campaign),
+                            attempt_root=str(second),
+                            expected_previous_epoch=1,
+                        )
+                    )
+                MODULE.activate_campaign_attempt(
+                    argparse.Namespace(
+                        root=str(campaign),
+                        attempt_root=str(second),
+                        expected_previous_epoch=2,
+                    )
+                )
+                with self.assertRaisesRegex(ValueError, "compare-and-swap"):
+                    MODULE.complete_campaign(
+                        argparse.Namespace(
+                            root=str(campaign),
+                            expected_attempt_root=str(fixture["attempt"]),
+                            expected_attempt="A2",
+                            expected_launch_nonce="nonce-a2",
+                            expected_fencing_epoch=2,
+                            summary="stale close",
+                            evidence_path=[],
+                        )
+                    )
+            self.assertFalse(MODULE.campaign_goal_completed_path(campaign).exists())
+
+    def test_campaign_completion_drains_active_turn_and_never_starts_queued_work(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = initialize_campaign_fixture(Path(directory))
+            campaign = fixture["campaign"]
+            attempt = fixture["attempt"]
+            MODULE.start_campaign_dispatcher(
+                self.campaign_start_args(
+                    fixture, make_releasable_fake_codex(attempt)
+                )
+            )
+            supervisor_pid = MODULE.read_json(
+                MODULE.campaign_supervisor_state_path(campaign, "node1")
+            )["pid"]
+            publish(attempt, "finish active work", "campaign-active")
+            publish(attempt, "must remain queued", "campaign-queued")
+            wait_until(lambda: (attempt / "entered-campaign-active").exists())
+            errors = []
+
+            def complete():
+                try:
+                    with mock.patch.dict(
+                        os.environ,
+                        {"CODEX_THREAD_ID": "test-coordinator-thread"},
+                    ):
+                        MODULE.complete_campaign(
+                            argparse.Namespace(
+                                root=str(campaign),
+                                expected_attempt_root=str(attempt),
+                                expected_attempt="A2",
+                                expected_launch_nonce="nonce-a2",
+                                expected_fencing_epoch=2,
+                                summary="active request drained",
+                                evidence_path=[],
+                            )
+                        )
+                except Exception as error:  # pragma: no cover - surfaced below
+                    errors.append(error)
+
+            thread = threading.Thread(target=complete)
+            thread.start()
+            time.sleep(0.3)
+            self.assertTrue(thread.is_alive(), "completion must drain the active Agent turn")
+            (attempt / "release-campaign-active").write_text(
+                "release", encoding="utf-8"
+            )
+            thread.join(timeout=10)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(errors, [])
+            wait_until(
+                lambda: MODULE.read_json(
+                    MODULE.dispatcher_state_path(campaign, "node1")
+                ).get("status")
+                == "goal-completed"
+            )
+            self.assertFalse((attempt / "entered-campaign-queued").exists())
+            invocation_log = (
+                attempt
+                / "dispatcher"
+                / "node1"
+                / "agent-results"
+                / "invocations.log"
+            )
+            self.assertEqual(invocation_log.read_text().splitlines(), ["campaign-active"])
+            wait_until(lambda: not MODULE.process_alive(supervisor_pid))
+
     def test_background_worker_waits_for_manifest_then_watches(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

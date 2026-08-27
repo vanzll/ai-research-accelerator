@@ -81,7 +81,7 @@ The Node 0 Goal may own global diagnosis and semantics-preserving recovery only
 through the declared first-work gate. Deterministic supervisors own waiting and
 training processes; ordinary worker Agents handle bounded node-local incidents.
 Worker dispatchers remain alive across failed training attempts and terminate
-normally only after validating the Node 0 coordinator's fenced
+normally only after validating the exact Node 0 host and Goal thread's fenced
 `GOAL_COMPLETED` directive; attempt evidence and trainer processes remain
 attempt-scoped. Failure or idle states do not authorize dispatcher shutdown.
 `AGENT_BUS_READY` proves only Agent coordination. Require independent

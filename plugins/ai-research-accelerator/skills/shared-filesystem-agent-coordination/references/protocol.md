@@ -10,6 +10,11 @@ contracts, attempt manifests, and cross-worker requests. It holds a
 campaign-scoped lock and publishes a monotonically increasing fencing epoch.
 There is no silent coordinator takeover within an attempt.
 
+This protocol assumes the declared agents are trusted writers on the shared
+filesystem. Host/thread/nonce/epoch checks provide identity fencing, not
+cryptographic authentication. Use ACLs or Node 0 signatures when other
+principals can write these paths.
+
 Workers own only their node/session-local execution state and their structured
 claims, acknowledgements, results, and events. They never patch shared source
 concurrently or command another worker. A worker that needs another node to act
@@ -83,8 +88,8 @@ To advance from A2 to A3:
 
 1. prepare and validate A3 code, manifest, and worker actions while the campaign
    dispatchers remain live;
-2. under the campaign lock, atomically publish the new `active-attempt.json`
-   and fencing epoch;
+2. under the campaign lock, compare-and-swap `active-attempt.json` from the
+   expected previous epoch to the new root and fencing epoch;
 3. let every persistent dispatcher validate and acknowledge the new attempt;
 4. dispatch A3 work only after all workers adopted it;
 5. keep A2 evidence immutable and reject any late A2 request.
@@ -151,9 +156,10 @@ Interpret states conservatively:
 - bus readiness never substitutes for domain workload evidence.
 
 The only normal dispatcher shutdown is an immutable `GOAL_COMPLETED` directive
-published by the exact Node 0 coordinator under the current campaign lock and
-fencing epoch. It must reference the Goal completion evidence and campaign
-identity. Dispatchers validate that record, finish or safely terminate owned
+published by the exact Node 0 coordinator under the current campaign lock. The
+command must compare-and-swap the expected final attempt root, attempt, nonce,
+and fencing epoch. It must reference the Goal completion evidence and campaign
+identity. Dispatchers validate that record, finish owned
 bounded invocations according to contract, write final state, and exit without
 another Agent wake.
 

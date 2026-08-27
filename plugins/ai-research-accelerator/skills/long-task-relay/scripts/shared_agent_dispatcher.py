@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
 import fcntl
 import glob
@@ -24,9 +25,12 @@ SCHEMA_VERSION = 1
 TERMINAL_RESULT_STATES = {"succeeded", "failed", "needs_coordinator"}
 ACTIVE_DISPATCHER_STATES = {
     "waiting-for-manifest",
+    "waiting-for-active-attempt",
+    "waiting-for-next-attempt",
     "watching",
     "waiting-for-thread-idle",
     "agent-active",
+    "restarting",
 }
 _BACKGROUND_PROCESSES: dict[int, subprocess.Popen[str]] = {}
 
@@ -195,6 +199,44 @@ def load_manifest(root: Path) -> dict[str, Any]:
     return manifest
 
 
+def campaign_manifest_path(root: Path) -> Path:
+    return root / "campaign-manifest.json"
+
+
+def campaign_active_attempt_path(root: Path) -> Path:
+    return root / "active-attempt.json"
+
+
+def campaign_goal_completed_path(root: Path) -> Path:
+    return root / "goal-completed.json"
+
+
+def campaign_binding_path(attempt_root: Path) -> Path:
+    return attempt_root / "campaign-binding.json"
+
+
+def load_campaign_manifest(root: Path) -> dict[str, Any]:
+    manifest = read_json(campaign_manifest_path(root))
+    if manifest.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError("unsupported agent campaign manifest schema")
+    required = {
+        "campaign_id",
+        "science_contract_hash",
+        "coordinator_node",
+        "coordinator_hostname",
+        "coordinator_thread_id",
+        "authority_root",
+        "attempts_root",
+        "nodes",
+    }
+    missing = sorted(required - manifest.keys())
+    if missing:
+        raise ValueError(f"campaign manifest missing: {', '.join(missing)}")
+    if not isinstance(manifest["nodes"], dict):
+        raise ValueError("campaign nodes must be an object")
+    return manifest
+
+
 def parse_node(value: str) -> tuple[str, str]:
     if "=" not in value:
         raise argparse.ArgumentTypeError("node must use NODE=HOSTNAME")
@@ -247,6 +289,18 @@ def initialize_bus(args: argparse.Namespace) -> int:
     ]
     with lock_path.open("a+", encoding="utf-8") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
+        active_campaign_path = authority_root / "active-agent-campaign.json"
+        if active_campaign_path.exists():
+            active_campaign = read_json(active_campaign_path)
+            campaign_root = Path(active_campaign["root"]).expanduser().resolve()
+            campaign = load_campaign_manifest(campaign_root)
+            if campaign_goal_completed_path(campaign_root).exists():
+                raise ValueError("agent campaign is already completed")
+            attempts_root = Path(campaign["attempts_root"]).expanduser().resolve()
+            if not root.is_relative_to(attempts_root):
+                raise ValueError("attempt root is outside the active campaign")
+            candidate = {**payload, "authority_root": str(authority_root)}
+            validate_attempt_for_campaign(campaign, candidate)
         active_path = authority_root / "active-agent-bus.json"
         active = read_json(active_path) if active_path.exists() else None
         active_payload = {
@@ -272,12 +326,314 @@ def initialize_bus(args: argparse.Namespace) -> int:
         for node in nodes:
             for directory in ("inbox", "claims", "acks", "results", "invocations"):
                 (root / directory / node).mkdir(parents=True, exist_ok=True)
-        # Workers wait for the manifest. Publish authority first and the
-        # immutable manifest last so they cannot observe a half-advanced bus.
-        atomic_replace_json(active_path, active_payload)
+        # Publish the complete immutable attempt before advancing authority.
+        # A crash can leave an inert orphan attempt, never an active pointer to
+        # a missing manifest.
         if not path.exists() and not atomic_create_json(path, payload):
             raise RuntimeError(f"failed to publish agent-bus manifest: {path}")
+        atomic_replace_json(active_path, active_payload)
     print(path)
+    return 0
+
+
+def validate_attempt_for_campaign(
+    campaign: dict[str, Any], attempt: dict[str, Any]
+) -> None:
+    expected = {
+        "science_contract_hash": campaign["science_contract_hash"],
+        "coordinator_node": campaign["coordinator_node"],
+        "coordinator_hostname": campaign["coordinator_hostname"],
+        "coordinator_thread_id": campaign["coordinator_thread_id"],
+        "authority_root": campaign["authority_root"],
+        "nodes": campaign["nodes"],
+    }
+    for key, value in expected.items():
+        if attempt.get(key) != value:
+            raise ValueError(f"attempt is outside campaign: {key} mismatch")
+
+
+def validate_campaign_coordinator_identity(campaign: dict[str, Any]) -> None:
+    coordinator = campaign["coordinator_node"]
+    expected_host = campaign["nodes"].get(coordinator)
+    if short_hostname() != expected_host:
+        raise ValueError(
+            f"coordinator host mismatch: running on {short_hostname()}, expected {expected_host}"
+        )
+    observed_thread = os.environ.get("CODEX_THREAD_ID")
+    if observed_thread != campaign["coordinator_thread_id"]:
+        raise ValueError(
+            "coordinator thread mismatch: command is not from the frozen Node 0 Goal"
+        )
+
+
+def initialize_campaign(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    authority_root = Path(args.authority_root).expanduser().resolve()
+    nodes = dict(args.node)
+    if args.coordinator_node not in nodes:
+        raise ValueError("coordinator node is missing from --node entries")
+    expected_host = nodes[args.coordinator_node]
+    if short_hostname() != expected_host and not args.allow_host_mismatch:
+        raise ValueError(
+            f"coordinator host mismatch: running on {short_hostname()}, expected {expected_host}"
+        )
+    if (
+        os.environ.get("CODEX_THREAD_ID") != args.coordinator_thread_id
+        and not args.allow_host_mismatch
+    ):
+        raise ValueError(
+            "coordinator thread mismatch: campaign must be initialized by the frozen Node 0 Goal"
+        )
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "kind": "agent-campaign-manifest",
+        "campaign_id": args.campaign_id,
+        "science_contract_hash": args.science_contract_hash,
+        "coordinator_node": args.coordinator_node,
+        "coordinator_hostname": expected_host,
+        "coordinator_thread_id": args.coordinator_thread_id,
+        "authority_root": str(authority_root),
+        "attempts_root": str(Path(args.attempts_root).expanduser().resolve()),
+        "nodes": nodes,
+        "created_at": timestamp(),
+    }
+    identity_keys = [
+        "schema_version",
+        "kind",
+        "campaign_id",
+        "science_contract_hash",
+        "coordinator_node",
+        "coordinator_hostname",
+        "coordinator_thread_id",
+        "authority_root",
+        "attempts_root",
+        "nodes",
+    ]
+    authority_root.mkdir(parents=True, exist_ok=True)
+    root.mkdir(parents=True, exist_ok=True)
+    with (authority_root / "coordinator.lock").open("a+", encoding="utf-8") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        path = campaign_manifest_path(root)
+        if path.exists():
+            existing = load_campaign_manifest(root)
+            if any(existing.get(key) != payload.get(key) for key in identity_keys):
+                raise ValueError(f"refusing to replace mismatched campaign: {path}")
+        elif not atomic_create_json(path, payload):
+            raise RuntimeError(f"failed to publish campaign manifest: {path}")
+        active_path = authority_root / "active-agent-campaign.json"
+        active_payload = {
+            "schema_version": SCHEMA_VERSION,
+            "kind": "active-agent-campaign",
+            "root": str(root),
+            "campaign_id": args.campaign_id,
+            "science_contract_hash": args.science_contract_hash,
+            "coordinator_node": args.coordinator_node,
+            "coordinator_hostname": expected_host,
+            "coordinator_thread_id": args.coordinator_thread_id,
+            "updated_at": timestamp(),
+        }
+        if active_path.exists():
+            existing_active = read_json(active_path)
+            if existing_active.get("root") != str(root):
+                raise ValueError("another agent campaign already owns this authority root")
+        atomic_replace_json(active_path, active_payload)
+        for node in nodes:
+            (root / "dispatcher" / node).mkdir(parents=True, exist_ok=True)
+            (root / "supervisor" / node).mkdir(parents=True, exist_ok=True)
+    print(campaign_manifest_path(root))
+    return 0
+
+
+def active_attempt_record(
+    campaign_root: Path, campaign: dict[str, Any]
+) -> tuple[Path, dict[str, Any], dict[str, Any]]:
+    pointer = read_json(campaign_active_attempt_path(campaign_root))
+    required = {
+        "root",
+        "experiment_id",
+        "attempt",
+        "launch_nonce",
+        "science_contract_hash",
+        "fencing_epoch",
+        "coordinator_node",
+        "coordinator_hostname",
+        "coordinator_thread_id",
+    }
+    missing = sorted(required - pointer.keys())
+    if missing:
+        raise ValueError(f"active-attempt record missing: {', '.join(missing)}")
+    attempt_root = Path(pointer["root"]).expanduser().resolve()
+    attempt = load_manifest(attempt_root)
+    validate_attempt_for_campaign(campaign, attempt)
+    expected = {
+        "root": str(attempt_root),
+        "experiment_id": attempt["experiment_id"],
+        "attempt": attempt["attempt"],
+        "launch_nonce": attempt["launch_nonce"],
+        "science_contract_hash": attempt["science_contract_hash"],
+        "fencing_epoch": attempt["fencing_epoch"],
+        "coordinator_node": attempt["coordinator_node"],
+        "coordinator_hostname": attempt["coordinator_hostname"],
+        "coordinator_thread_id": attempt["coordinator_thread_id"],
+    }
+    for key, value in expected.items():
+        if pointer.get(key) != value:
+            raise ValueError(f"active-attempt {key} mismatch")
+    validate_active_authority(attempt_root, attempt)
+    return attempt_root, attempt, pointer
+
+
+def activate_campaign_attempt(args: argparse.Namespace) -> int:
+    campaign_root = Path(args.root).expanduser().resolve()
+    attempt_root = Path(args.attempt_root).expanduser().resolve()
+    campaign = load_campaign_manifest(campaign_root)
+    validate_campaign_coordinator_identity(campaign)
+    if campaign_goal_completed_path(campaign_root).exists():
+        raise ValueError("campaign is already completed")
+    attempt = load_manifest(attempt_root)
+    validate_attempt_for_campaign(campaign, attempt)
+    attempts_root = Path(campaign["attempts_root"]).expanduser().resolve()
+    if not attempt_root.is_relative_to(attempts_root):
+        raise ValueError("attempt root is outside the campaign attempts root")
+    lock_path = Path(campaign["authority_root"]) / "coordinator.lock"
+    with lock_path.open("a+", encoding="utf-8") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        validate_active_authority(attempt_root, attempt)
+        payload = {
+            "schema_version": SCHEMA_VERSION,
+            "kind": "active-agent-campaign-attempt",
+            "campaign_id": campaign["campaign_id"],
+            "root": str(attempt_root),
+            "experiment_id": attempt["experiment_id"],
+            "attempt": attempt["attempt"],
+            "launch_nonce": attempt["launch_nonce"],
+            "science_contract_hash": attempt["science_contract_hash"],
+            "fencing_epoch": attempt["fencing_epoch"],
+            "coordinator_node": attempt["coordinator_node"],
+            "coordinator_hostname": attempt["coordinator_hostname"],
+            "coordinator_thread_id": attempt["coordinator_thread_id"],
+            "updated_at": timestamp(),
+        }
+        path = campaign_active_attempt_path(campaign_root)
+        if path.exists():
+            current = read_json(path)
+            current_epoch = int(current.get("fencing_epoch", -1))
+            new_epoch = int(attempt["fencing_epoch"])
+            if current_epoch != args.expected_previous_epoch:
+                raise ValueError("campaign attempt compare-and-swap epoch mismatch")
+            if new_epoch < current_epoch:
+                raise ValueError("campaign attempt fencing epoch cannot decrease")
+            if new_epoch == current_epoch and current.get("root") != str(attempt_root):
+                raise ValueError("campaign attempt root changed without a new fencing epoch")
+        elif args.expected_previous_epoch != -1:
+            raise ValueError("campaign attempt compare-and-swap expected an existing epoch")
+        binding = {
+            "schema_version": SCHEMA_VERSION,
+            "kind": "agent-campaign-binding",
+            "campaign_id": campaign["campaign_id"],
+            "campaign_root": str(campaign_root),
+            "science_contract_hash": campaign["science_contract_hash"],
+            "fencing_epoch": attempt["fencing_epoch"],
+            "attempt_root": str(attempt_root),
+            "created_at": timestamp(),
+        }
+        binding_path = campaign_binding_path(attempt_root)
+        if not atomic_create_json(binding_path, binding):
+            existing_binding = read_json(binding_path)
+            if any(
+                existing_binding.get(key) != binding.get(key)
+                for key in binding
+                if key != "created_at"
+            ):
+                raise ValueError(
+                    f"refusing to replace mismatched campaign binding: {binding_path}"
+                )
+        atomic_replace_json(path, payload)
+    print(campaign_active_attempt_path(campaign_root))
+    return 0
+
+
+def validate_goal_completed(
+    campaign_root: Path, campaign: dict[str, Any]
+) -> dict[str, Any]:
+    record = read_json(campaign_goal_completed_path(campaign_root))
+    active = read_json(campaign_active_attempt_path(campaign_root))
+    expected = {
+        "schema_version": SCHEMA_VERSION,
+        "kind": "GOAL_COMPLETED",
+        "campaign_id": campaign["campaign_id"],
+        "science_contract_hash": campaign["science_contract_hash"],
+        "sender": campaign["coordinator_node"],
+        "sender_hostname": campaign["coordinator_hostname"],
+        "coordinator_thread_id": campaign["coordinator_thread_id"],
+        "final_attempt_root": active["root"],
+        "final_experiment_id": active["experiment_id"],
+        "final_attempt": active["attempt"],
+        "final_launch_nonce": active["launch_nonce"],
+        "final_fencing_epoch": active["fencing_epoch"],
+    }
+    for key, value in expected.items():
+        if record.get(key) != value:
+            raise ValueError(f"GOAL_COMPLETED {key} mismatch")
+    return record
+
+
+def complete_campaign(args: argparse.Namespace) -> int:
+    campaign_root = Path(args.root).expanduser().resolve()
+    campaign = load_campaign_manifest(campaign_root)
+    validate_campaign_coordinator_identity(campaign)
+    attempt_root, attempt, active = active_attempt_record(campaign_root, campaign)
+    expected = {
+        "root": str(Path(args.expected_attempt_root).expanduser().resolve()),
+        "attempt": args.expected_attempt,
+        "launch_nonce": args.expected_launch_nonce,
+        "fencing_epoch": args.expected_fencing_epoch,
+    }
+    for key, value in expected.items():
+        if active.get(key) != value:
+            raise ValueError(f"Goal completion compare-and-swap {key} mismatch")
+    with contextlib.ExitStack() as stack:
+        for node in sorted(campaign["nodes"]):
+            if node == campaign["coordinator_node"]:
+                continue
+            handle = stack.enter_context(
+                worker_control_lock_path(campaign_root, node).open(
+                    "a+", encoding="utf-8"
+                )
+            )
+            fcntl.flock(handle, fcntl.LOCK_EX)
+        authority = stack.enter_context(
+            authority_lock_path(attempt).open("a+", encoding="utf-8")
+        )
+        fcntl.flock(authority, fcntl.LOCK_EX)
+        validate_active_authority(attempt_root, attempt)
+        payload = {
+            "schema_version": SCHEMA_VERSION,
+            "kind": "GOAL_COMPLETED",
+            "campaign_id": campaign["campaign_id"],
+            "science_contract_hash": campaign["science_contract_hash"],
+            "sender": campaign["coordinator_node"],
+            "sender_hostname": campaign["coordinator_hostname"],
+            "coordinator_thread_id": campaign["coordinator_thread_id"],
+            "final_attempt_root": active["root"],
+            "final_experiment_id": active["experiment_id"],
+            "final_attempt": active["attempt"],
+            "final_launch_nonce": active["launch_nonce"],
+            "final_fencing_epoch": active["fencing_epoch"],
+            "summary": args.summary,
+            "evidence_paths": args.evidence_path,
+            "created_at": timestamp(),
+        }
+        path = campaign_goal_completed_path(campaign_root)
+        if not atomic_create_json(path, payload):
+            existing = read_json(path)
+            if any(
+                existing.get(key) != payload.get(key)
+                for key in payload
+                if key != "created_at"
+            ):
+                raise ValueError(f"refusing to replace mismatched Goal completion: {path}")
+    print(campaign_goal_completed_path(campaign_root))
     return 0
 
 
@@ -343,6 +699,22 @@ def publish_request(args: argparse.Namespace) -> int:
         validate_active_authority(root, manifest)
         if (root / "terminal.json").exists():
             raise ValueError("agent bus is closed")
+        binding_path = campaign_binding_path(root)
+        if binding_path.exists():
+            binding = read_json(binding_path)
+            campaign_root = Path(binding["campaign_root"]).expanduser().resolve()
+            campaign = load_campaign_manifest(campaign_root)
+            expected_binding = {
+                "campaign_id": campaign["campaign_id"],
+                "science_contract_hash": manifest["science_contract_hash"],
+                "fencing_epoch": manifest["fencing_epoch"],
+                "attempt_root": str(root),
+            }
+            for key, value in expected_binding.items():
+                if binding.get(key) != value:
+                    raise ValueError(f"campaign binding {key} mismatch")
+            if campaign_goal_completed_path(campaign_root).exists():
+                raise ValueError("agent campaign is already completed")
         sender = manifest["coordinator_node"]
         validate_coordinator_identity(manifest)
         if args.target == sender:
@@ -788,6 +1160,18 @@ def resume_helper(args: argparse.Namespace) -> int:
                 [str(spec_path)],
             )
             return 0
+        dispatcher_root = Path(spec.get("dispatcher_root", spec["root"]))
+        if dispatcher_root != root and campaign_goal_completed_path(
+            dispatcher_root
+        ).exists():
+            create_terminal_result(
+                result_path,
+                result_base,
+                "needs_coordinator",
+                "campaign completed before Codex spawn",
+                [str(spec_path)],
+            )
+            return 0
         started_at = timestamp()
         child = subprocess.Popen(
             [
@@ -894,7 +1278,9 @@ def process_request(
     task_timeout: int,
     quiet_seconds: int,
     idle_timeout: int,
+    dispatcher_root: Path | None = None,
 ) -> None:
+    control_root = dispatcher_root or root
     request = read_json(request_path)
     request_id = str(request.get("request_id") or request_path.stem)
     claim_path = root / "claims" / node / f"{request_id}.json"
@@ -942,7 +1328,9 @@ def process_request(
     if not invocation_path.exists():
         idle_deadline = time.monotonic() + idle_timeout
         while not thread_idle(session_path, quiet_seconds):
-            heartbeat_existing_state(root, node, "waiting-for-thread-idle", request_id)
+            heartbeat_existing_state(
+                control_root, node, "waiting-for-thread-idle", request_id
+            )
             try:
                 validate_active_authority(root, manifest)
             except ValueError:
@@ -979,7 +1367,7 @@ def process_request(
     output_path = output_dir / f"{request_id}.json"
     schema_path = root / "dispatcher" / node / "agent-result-schema.json"
     write_output_schema(schema_path)
-    control_lock_path = worker_control_lock_path(root, node)
+    control_lock_path = worker_control_lock_path(control_root, node)
     with control_lock_path.open("a+", encoding="utf-8") as control_lock:
         # Stop owns this lock exclusively while publishing its intent. No
         # helper can be created or gated after stop begins.
@@ -995,7 +1383,15 @@ def process_request(
                 [str(request_path)],
             )
             return
-        if (root / "terminal.json").exists() or worker_stop_path(root, node).exists():
+        campaign_completed = (
+            control_root != root
+            and campaign_goal_completed_path(control_root).exists()
+        )
+        if (
+            (root / "terminal.json").exists()
+            or worker_stop_path(control_root, node).exists()
+            or campaign_completed
+        ):
             create_terminal_result(
                 result_path,
                 worker_record(manifest, node, request),
@@ -1022,6 +1418,7 @@ def process_request(
                 "schema_version": SCHEMA_VERSION,
                 "request_id": request_id,
                 "root": str(root.resolve()),
+                "dispatcher_root": str(control_root.resolve()),
                 "authority_lock_path": str(authority_lock_path(manifest)),
                 "codex_path": codex_path,
                 "thread_id": thread_id,
@@ -1108,7 +1505,7 @@ def process_request(
 
     wait_deadline = time.monotonic() + task_timeout + 180
     while not result_path.exists():
-        heartbeat_existing_state(root, node, "agent-active", request_id)
+        heartbeat_existing_state(control_root, node, "agent-active", request_id)
         try:
             validate_active_authority(root, manifest)
         except ValueError:
@@ -1169,6 +1566,7 @@ def dispatch_pending_once(
     task_timeout: int,
     quiet_seconds: int,
     idle_timeout: int,
+    dispatcher_root: Path | None = None,
 ) -> None:
     inbox = root / "inbox" / node
     for request_path in sorted(inbox.glob("*.json")):
@@ -1184,6 +1582,7 @@ def dispatch_pending_once(
             task_timeout,
             quiet_seconds,
             idle_timeout,
+            dispatcher_root,
         )
 
 
@@ -1439,6 +1838,510 @@ def stop_dispatcher(args: argparse.Namespace) -> int:
     return 0
 
 
+def campaign_supervisor_state_path(root: Path, node: str) -> Path:
+    return root / "supervisor" / node / "state.json"
+
+
+def campaign_supervisor_process_matches(
+    state: dict[str, Any], root: Path, node: str
+) -> bool:
+    pid = int(state.get("pid", -1))
+    if not process_alive(pid):
+        return False
+    if process_start_token(pid) != state.get("process_start_token"):
+        return False
+    argv = process_argv(pid)
+    return (
+        any(Path(value).name == "shared_agent_dispatcher.py" for value in argv)
+        and "campaign-supervise" in argv
+        and option_value(argv, "--root") == str(root)
+        and option_value(argv, "--node") == node
+        and option_value(argv, "--instance-id") == state.get("instance_id")
+    )
+
+
+def campaign_dispatcher_config(args: argparse.Namespace) -> dict[str, Any]:
+    session = (
+        Path(args.session_path).expanduser().resolve()
+        if args.session_path
+        else discover_session_path(args.thread_id)
+    )
+    if session is None:
+        raise FileNotFoundError(f"Codex transcript not found for {args.thread_id}")
+    return {
+        "thread_id": args.thread_id,
+        "session_path": str(session),
+        "workdir": str(Path(args.workdir).expanduser().resolve()),
+        "codex_path": args.codex_path,
+        "poll_interval": args.poll_interval,
+        "task_timeout": args.task_timeout,
+        "thread_quiet_seconds": args.thread_quiet_seconds,
+        "thread_idle_timeout": args.thread_idle_timeout,
+    }
+
+
+def validate_campaign_worker_runtime(
+    root: Path, node: str, config: dict[str, Any]
+) -> dict[str, Any]:
+    campaign = load_campaign_manifest(root)
+    if node == campaign["coordinator_node"]:
+        raise ValueError("do not attach a dispatcher to the active coordinator Goal")
+    expected_host = campaign["nodes"].get(node)
+    if expected_host is None:
+        raise ValueError(f"unknown node in campaign: {node}")
+    if short_hostname() != expected_host:
+        raise ValueError(
+            f"host mismatch for {node}: running on {short_hostname()}, expected {expected_host}"
+        )
+    session_path = Path(config["session_path"])
+    if not session_path.exists():
+        raise FileNotFoundError(f"Codex transcript not found for {config['thread_id']}")
+    if not Path(config["workdir"]).exists():
+        raise FileNotFoundError(config["workdir"])
+    return campaign
+
+
+def run_campaign_dispatcher(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    config = campaign_dispatcher_config(args)
+    campaign = validate_campaign_worker_runtime(root, args.node, config)
+    state_values = {
+        **config,
+        "mode": "campaign",
+        "campaign_id": campaign["campaign_id"],
+        "instance_id": args.instance_id,
+    }
+    lock_path = root / "dispatcher" / args.node / "dispatcher.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError(f"campaign dispatcher already running for {args.node}")
+        while True:
+            if worker_stop_path(root, args.node).exists():
+                update_dispatcher_state(
+                    root, args.node, "stopped", stop_reason="break-glass", **state_values
+                )
+                return 0
+            goal_path = campaign_goal_completed_path(root)
+            if goal_path.exists():
+                try:
+                    goal = validate_goal_completed(root, campaign)
+                except (OSError, ValueError) as error:
+                    update_dispatcher_state(
+                        root,
+                        args.node,
+                        "waiting-for-valid-goal-completion",
+                        validation_error=str(error),
+                        **state_values,
+                    )
+                    time.sleep(args.poll_interval)
+                    continue
+                update_dispatcher_state(
+                    root,
+                    args.node,
+                    "goal-completed",
+                    goal_completed_at=goal["created_at"],
+                    final_fencing_epoch=goal["final_fencing_epoch"],
+                    **state_values,
+                )
+                return 0
+            if not campaign_active_attempt_path(root).exists():
+                update_dispatcher_state(
+                    root,
+                    args.node,
+                    "waiting-for-active-attempt",
+                    **state_values,
+                )
+                time.sleep(args.poll_interval)
+                continue
+            try:
+                attempt_root, attempt, active = active_attempt_record(root, campaign)
+            except (OSError, ValueError) as error:
+                update_dispatcher_state(
+                    root,
+                    args.node,
+                    "waiting-for-active-attempt",
+                    validation_error=str(error),
+                    **state_values,
+                )
+                time.sleep(args.poll_interval)
+                continue
+            active_values = {
+                "active_attempt_root": str(attempt_root),
+                "active_experiment_id": attempt["experiment_id"],
+                "active_attempt": attempt["attempt"],
+                "active_launch_nonce": attempt["launch_nonce"],
+                "active_fencing_epoch": attempt["fencing_epoch"],
+            }
+            if (attempt_root / "terminal.json").exists():
+                update_dispatcher_state(
+                    root,
+                    args.node,
+                    "watching",
+                    active_attempt_terminal=True,
+                    **active_values,
+                    **state_values,
+                )
+                time.sleep(args.poll_interval)
+                continue
+            update_dispatcher_state(
+                root,
+                args.node,
+                "watching",
+                active_attempt_terminal=False,
+                **active_values,
+                **state_values,
+            )
+            dispatch_pending_once(
+                attempt_root,
+                attempt,
+                args.node,
+                args.thread_id,
+                Path(config["session_path"]),
+                args.codex_path,
+                Path(config["workdir"]),
+                args.task_timeout,
+                args.thread_quiet_seconds,
+                args.thread_idle_timeout,
+                dispatcher_root=root,
+            )
+            time.sleep(args.poll_interval)
+
+
+def update_campaign_supervisor_state(
+    root: Path, node: str, status: str, **values: Any
+) -> None:
+    atomic_replace_json(
+        campaign_supervisor_state_path(root, node),
+        {
+            "schema_version": SCHEMA_VERSION,
+            "node": node,
+            "hostname": short_hostname(),
+            "pid": os.getpid(),
+            "process_start_token": process_start_token(os.getpid()),
+            "status": status,
+            "heartbeat_at": timestamp(),
+            **values,
+        },
+    )
+
+
+def supervise_campaign_dispatcher(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    config = campaign_dispatcher_config(args)
+    campaign = validate_campaign_worker_runtime(root, args.node, config)
+    supervisor_values = {
+        **config,
+        "campaign_id": campaign["campaign_id"],
+        "instance_id": args.instance_id,
+    }
+    lock_path = root / "supervisor" / args.node / "supervisor.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    child: subprocess.Popen[str] | None = None
+    shutdown_requested = False
+
+    def request_shutdown(_signum: int, _frame: Any) -> None:
+        nonlocal shutdown_requested, child
+        shutdown_requested = True
+        if child is not None and child.poll() is None:
+            child.terminate()
+
+    signal.signal(signal.SIGTERM, request_shutdown)
+    signal.signal(signal.SIGINT, request_shutdown)
+    with lock_path.open("a+", encoding="utf-8") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError(f"campaign supervisor already running for {args.node}")
+        restart_count = 0
+        while not shutdown_requested:
+            if worker_stop_path(root, args.node).exists():
+                update_campaign_supervisor_state(
+                    root, args.node, "stopped", **supervisor_values
+                )
+                return 0
+            if campaign_goal_completed_path(root).exists():
+                try:
+                    validate_goal_completed(root, campaign)
+                except (OSError, ValueError) as error:
+                    update_campaign_supervisor_state(
+                        root,
+                        args.node,
+                        "waiting-for-valid-goal-completion",
+                        validation_error=str(error),
+                        **supervisor_values,
+                    )
+                    time.sleep(args.poll_interval)
+                    continue
+                else:
+                    update_campaign_supervisor_state(
+                        root, args.node, "goal-completed", **supervisor_values
+                    )
+                    return 0
+            dispatcher_instance_id = uuid.uuid4().hex
+            command = [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                "campaign-run",
+                "--root",
+                str(root),
+                "--node",
+                args.node,
+                "--instance-id",
+                dispatcher_instance_id,
+                "--thread-id",
+                args.thread_id,
+                "--workdir",
+                args.workdir,
+                "--codex-path",
+                args.codex_path,
+                "--poll-interval",
+                str(args.poll_interval),
+                "--task-timeout",
+                str(args.task_timeout),
+                "--thread-quiet-seconds",
+                str(args.thread_quiet_seconds),
+                "--thread-idle-timeout",
+                str(args.thread_idle_timeout),
+            ]
+            if args.session_path:
+                command.extend(["--session-path", args.session_path])
+            child = subprocess.Popen(command, close_fds=True)
+            update_campaign_supervisor_state(
+                root,
+                args.node,
+                "supervising",
+                dispatcher_pid=child.pid,
+                dispatcher_instance_id=dispatcher_instance_id,
+                restart_count=restart_count,
+                **supervisor_values,
+            )
+            while child.poll() is None and not shutdown_requested:
+                update_campaign_supervisor_state(
+                    root,
+                    args.node,
+                    "supervising",
+                    dispatcher_pid=child.pid,
+                    dispatcher_instance_id=dispatcher_instance_id,
+                    restart_count=restart_count,
+                    **supervisor_values,
+                )
+                time.sleep(max(args.poll_interval, 0.1))
+            if child.poll() is None:
+                child.terminate()
+            returncode = child.wait()
+            child = None
+            if shutdown_requested:
+                break
+            if campaign_goal_completed_path(root).exists():
+                try:
+                    validate_goal_completed(root, campaign)
+                except (OSError, ValueError) as error:
+                    update_campaign_supervisor_state(
+                        root,
+                        args.node,
+                        "waiting-for-valid-goal-completion",
+                        validation_error=str(error),
+                        **supervisor_values,
+                    )
+                    time.sleep(args.poll_interval)
+                    continue
+                else:
+                    update_campaign_supervisor_state(
+                        root, args.node, "goal-completed", **supervisor_values
+                    )
+                    return 0
+            if worker_stop_path(root, args.node).exists():
+                update_campaign_supervisor_state(
+                    root, args.node, "stopped", **supervisor_values
+                )
+                return 0
+            restart_count += 1
+            update_campaign_supervisor_state(
+                root,
+                args.node,
+                "restarting",
+                last_dispatcher_returncode=returncode,
+                restart_count=restart_count,
+                **supervisor_values,
+            )
+            time.sleep(args.restart_backoff)
+    update_campaign_supervisor_state(
+        root, args.node, "stopped", **supervisor_values
+    )
+    return 0
+
+
+def start_campaign_dispatcher(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    config = campaign_dispatcher_config(args)
+    campaign = validate_campaign_worker_runtime(root, args.node, config)
+    if campaign_goal_completed_path(root).exists():
+        validate_goal_completed(root, campaign)
+        raise ValueError("campaign is already completed")
+    supervisor_path = campaign_supervisor_state_path(root, args.node)
+    state_path = dispatcher_state_path(root, args.node)
+    requested = {**config, "campaign_id": campaign["campaign_id"]}
+    if supervisor_path.exists() and state_path.exists():
+        supervisor = read_json(supervisor_path)
+        state = read_json(state_path)
+        if campaign_supervisor_process_matches(supervisor, root, args.node):
+            mismatched = [
+                key for key, value in requested.items() if supervisor.get(key) != value
+            ]
+            if mismatched:
+                raise ValueError(
+                    "existing campaign supervisor has different configuration: "
+                    + ", ".join(mismatched)
+                )
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                if state_path.exists():
+                    state = read_json(state_path)
+                    if dispatcher_process_matches(state, root, args.node) and (
+                        state.get("status") in ACTIVE_DISPATCHER_STATES
+                    ):
+                        print(supervisor_path)
+                        return 0
+                time.sleep(0.2)
+            raise TimeoutError(
+                f"existing campaign supervisor did not expose a ready dispatcher: {supervisor_path}"
+            )
+    control_path = worker_control_lock_path(root, args.node)
+    with control_path.open("a+", encoding="utf-8") as control_lock:
+        fcntl.flock(control_lock, fcntl.LOCK_EX)
+        worker_stop_path(root, args.node).unlink(missing_ok=True)
+    log_path = root / "supervisor" / args.node / "supervisor.log"
+    instance_id = uuid.uuid4().hex
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "campaign-supervise",
+        "--root",
+        str(root),
+        "--node",
+        args.node,
+        "--instance-id",
+        instance_id,
+        "--thread-id",
+        args.thread_id,
+        "--workdir",
+        args.workdir,
+        "--codex-path",
+        args.codex_path,
+        "--poll-interval",
+        str(args.poll_interval),
+        "--task-timeout",
+        str(args.task_timeout),
+        "--thread-quiet-seconds",
+        str(args.thread_quiet_seconds),
+        "--thread-idle-timeout",
+        str(args.thread_idle_timeout),
+        "--restart-backoff",
+        str(args.restart_backoff),
+    ]
+    if args.session_path:
+        command.extend(["--session-path", args.session_path])
+    with log_path.open("a", encoding="utf-8") as log:
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            close_fds=True,
+        )
+    _BACKGROUND_PROCESSES[process.pid] = process
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        if supervisor_path.exists() and state_path.exists():
+            supervisor = read_json(supervisor_path)
+            state = read_json(state_path)
+            if (
+                supervisor.get("pid") == process.pid
+                and supervisor.get("instance_id") == instance_id
+                and campaign_supervisor_process_matches(
+                    supervisor, root, args.node
+                )
+                and dispatcher_process_matches(state, root, args.node)
+                and state.get("status") in ACTIVE_DISPATCHER_STATES
+            ):
+                print(supervisor_path)
+                return 0
+        if process.poll() is not None:
+            raise RuntimeError(f"campaign supervisor exited; inspect {log_path}")
+        time.sleep(0.2)
+    raise TimeoutError(f"campaign dispatcher did not become ready; inspect {log_path}")
+
+
+def status_campaign_dispatcher(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    supervisor = read_json(campaign_supervisor_state_path(root, args.node))
+    dispatcher = read_json(dispatcher_state_path(root, args.node))
+    supervisor["process_alive"] = campaign_supervisor_process_matches(
+        supervisor, root, args.node
+    )
+    dispatcher["process_alive"] = dispatcher_process_matches(
+        dispatcher, root, args.node
+    )
+    payload = {"supervisor": supervisor, "dispatcher": dispatcher}
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0 if supervisor["process_alive"] and dispatcher["process_alive"] else 1
+
+
+def stop_campaign_dispatcher(args: argparse.Namespace) -> int:
+    root = Path(args.root).expanduser().resolve()
+    supervisor_path = campaign_supervisor_state_path(root, args.node)
+    supervisor = read_json(supervisor_path)
+    control_path = worker_control_lock_path(root, args.node)
+    with control_path.open("a+", encoding="utf-8") as control_lock:
+        fcntl.flock(control_lock, fcntl.LOCK_EX)
+        atomic_replace_json(
+            worker_stop_path(root, args.node),
+            {
+                "schema_version": SCHEMA_VERSION,
+                "kind": "break-glass-stop",
+                "node": args.node,
+                "supervisor_instance_id": supervisor.get("instance_id"),
+                "created_at": timestamp(),
+            },
+        )
+        if campaign_active_attempt_path(root).exists():
+            try:
+                attempt_root, _attempt, _active = active_attempt_record(
+                    root, load_campaign_manifest(root)
+                )
+            except (OSError, ValueError):
+                attempt_root = None
+            if attempt_root is not None:
+                for invocation_path in sorted(
+                    (attempt_root / "invocations" / args.node).glob("*.json")
+                ):
+                    invocation = read_json(invocation_path)
+                    request_id = str(invocation.get("request_id"))
+                    if (attempt_root / "results" / args.node / f"{request_id}.json").exists():
+                        continue
+                    terminate_invocation(invocation, timeout=args.timeout)
+        if campaign_supervisor_process_matches(supervisor, root, args.node):
+            pid = int(supervisor["pid"])
+            try:
+                os.killpg(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            deadline = time.monotonic() + args.timeout
+            while process_alive(pid) and time.monotonic() < deadline:
+                time.sleep(0.2)
+            if process_alive(pid):
+                os.killpg(pid, signal.SIGKILL)
+    current = read_json(supervisor_path)
+    current.update({"status": "stopped", "stopped_at": timestamp()})
+    atomic_replace_json(supervisor_path, current)
+    print(supervisor_path)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -1456,6 +2359,44 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--node", action="append", type=parse_node, required=True)
     init.add_argument("--allow-host-mismatch", action="store_true", help=argparse.SUPPRESS)
     init.set_defaults(function=initialize_bus)
+
+    campaign_init = subparsers.add_parser(
+        "campaign-init", help="publish an immutable campaign manifest"
+    )
+    campaign_init.add_argument("--root", required=True)
+    campaign_init.add_argument("--authority-root", required=True)
+    campaign_init.add_argument("--attempts-root", required=True)
+    campaign_init.add_argument("--campaign-id", required=True)
+    campaign_init.add_argument("--science-contract-hash", required=True)
+    campaign_init.add_argument("--coordinator-node", default="node0")
+    campaign_init.add_argument("--coordinator-thread-id", required=True)
+    campaign_init.add_argument(
+        "--node", action="append", type=parse_node, required=True
+    )
+    campaign_init.add_argument(
+        "--allow-host-mismatch", action="store_true", help=argparse.SUPPRESS
+    )
+    campaign_init.set_defaults(function=initialize_campaign)
+
+    campaign_activate = subparsers.add_parser(
+        "campaign-activate", help="atomically select the active attempt"
+    )
+    campaign_activate.add_argument("--root", required=True)
+    campaign_activate.add_argument("--attempt-root", required=True)
+    campaign_activate.add_argument("--expected-previous-epoch", type=int, required=True)
+    campaign_activate.set_defaults(function=activate_campaign_attempt)
+
+    campaign_complete = subparsers.add_parser(
+        "campaign-complete", help="publish the fenced GOAL_COMPLETED record"
+    )
+    campaign_complete.add_argument("--root", required=True)
+    campaign_complete.add_argument("--expected-attempt-root", required=True)
+    campaign_complete.add_argument("--expected-attempt", required=True)
+    campaign_complete.add_argument("--expected-launch-nonce", required=True)
+    campaign_complete.add_argument("--expected-fencing-epoch", type=int, required=True)
+    campaign_complete.add_argument("--summary", required=True)
+    campaign_complete.add_argument("--evidence-path", action="append", default=[])
+    campaign_complete.set_defaults(function=complete_campaign)
 
     publish = subparsers.add_parser("publish", help="publish one coordinator request")
     publish.add_argument("--root", required=True)
@@ -1490,6 +2431,31 @@ def build_parser() -> argparse.ArgumentParser:
         dispatch.add_argument("--thread-idle-timeout", type=int, default=21600)
         dispatch.set_defaults(function=start_dispatcher if command == "start" else run_dispatcher)
 
+    for command in (
+        "campaign-start",
+        "campaign-run",
+        "campaign-supervise",
+    ):
+        dispatch = subparsers.add_parser(command)
+        dispatch.add_argument("--root", required=True)
+        dispatch.add_argument("--node", required=True)
+        dispatch.add_argument("--thread-id", required=True)
+        dispatch.add_argument("--instance-id", default="foreground")
+        dispatch.add_argument("--session-path")
+        dispatch.add_argument("--workdir", required=True)
+        dispatch.add_argument("--codex-path", default="codex")
+        dispatch.add_argument("--poll-interval", type=float, default=2.0)
+        dispatch.add_argument("--task-timeout", type=int, default=7200)
+        dispatch.add_argument("--thread-quiet-seconds", type=int, default=5)
+        dispatch.add_argument("--thread-idle-timeout", type=int, default=21600)
+        dispatch.add_argument("--restart-backoff", type=float, default=2.0)
+        functions = {
+            "campaign-start": start_campaign_dispatcher,
+            "campaign-run": run_campaign_dispatcher,
+            "campaign-supervise": supervise_campaign_dispatcher,
+        }
+        dispatch.set_defaults(function=functions[command])
+
     status = subparsers.add_parser("status")
     status.add_argument("--root", required=True)
     status.add_argument("--node", required=True)
@@ -1500,6 +2466,17 @@ def build_parser() -> argparse.ArgumentParser:
     stop.add_argument("--node", required=True)
     stop.add_argument("--timeout", type=int, default=15)
     stop.set_defaults(function=stop_dispatcher)
+
+    campaign_status = subparsers.add_parser("campaign-status")
+    campaign_status.add_argument("--root", required=True)
+    campaign_status.add_argument("--node", required=True)
+    campaign_status.set_defaults(function=status_campaign_dispatcher)
+
+    campaign_stop = subparsers.add_parser("campaign-stop")
+    campaign_stop.add_argument("--root", required=True)
+    campaign_stop.add_argument("--node", required=True)
+    campaign_stop.add_argument("--timeout", type=int, default=15)
+    campaign_stop.set_defaults(function=stop_campaign_dispatcher)
 
     helper = subparsers.add_parser("_resume-helper", help=argparse.SUPPRESS)
     helper.add_argument("--spec", required=True)
