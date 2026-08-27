@@ -43,6 +43,23 @@ choose between them from GPU count alone. First verify the interconnect, then
 benchmark the exact model topology and account for memory, optimizer state,
 gradient reduction, and framework mesh semantics.
 
+Scaling a single-node default requires an explicit decision. A recipe with
+`replicate_degree=1, shard_degree=8` on one eight-GPU node becomes
+`replicate_degree=1, shard_degree=32` on four nodes if the replicate argument
+is left unchanged. That is not a neutral default: per-layer parameter
+materialization now crosses nodes. To preserve node-local shard collectives,
+the four-node analogue is commonly `replicate_degree=4, shard_degree=8`, but
+only when the framework's rank layout makes each eight-rank shard group
+node-local and its HSDP gradient semantics are supported. Record the concrete
+rank groups and check the additional replicated-state memory before launch.
+If the new shard degree materially increases per-rank state, run one targeted
+same-topology rollout/backward/update memory gate without full evaluation or
+checkpointing before paying the formal startup cost; this is distinct evidence,
+not a generic smoke stage. Record total device memory and worst-rank allocated,
+reserved, and headroom values; require a deliberate headroom floor and bind the
+acceptance to code, ordered hosts, mesh, and scientific batch shape before
+formal promotion.
+
 Before launch, solve all relevant divisibility constraints together:
 
 ```text
@@ -156,6 +173,22 @@ Choose and label reductions deliberately:
 For reward curves, gather the numerator and denominator or use a correctly weighted reduction. Averaging rank means is biased when ranks contribute different sample counts.
 
 For timing, report both global maximum and distribution across ranks. The slowest participating rank determines synchronized throughput.
+
+## Parallelize evaluation without changing its population
+
+Step-zero evaluation can dominate startup when every independent DP replica
+runs the complete prompt set serially. Preserve the frozen prompt order,
+per-item seed, sampling settings, and scoring population, but assign distinct
+items to DP replicas. Ranks that jointly compute one sample through SP, TP, or
+other model parallelism must receive the same item.
+
+All ranks in a collective group must execute the same number of model calls.
+Use equal waves and deterministic padding when the item count does not divide
+the DP degree; discard padded outputs and save each real item exactly once from
+a designated model-parallel leader. Barrier before centralized scoring and
+validate exact output count/order. Report DP groups, wave count, padded slots,
+generation time, reward time, and retained/scored counts so acceleration is
+auditable rather than inferred from wall time.
 
 ## Checkpoint contract
 

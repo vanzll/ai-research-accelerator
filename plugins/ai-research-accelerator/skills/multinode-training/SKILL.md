@@ -129,6 +129,14 @@ attempt-scoped. Failure or idle states do not authorize dispatcher shutdown.
 - Implement experiment-ID parsing, contract validation, and identity derivation once and test multi-digit attempts. Duplicated outer/inner validators create contradictory control planes.
 - Treat a missing manifest as "not yet verified," not "asset missing." Before any download, discover declared existing asset roots, validate compatible files against the pinned revision/index/checksums, and import or link them into the immutable layout. Download only files that are absent or invalid.
 - Record both the logical parallel mesh and its physical placement. Full-world FSDP can turn a transport mistake into per-layer cross-node stalls; compare it with node-local sharding plus cross-node replication only after transport correctness is established.
+- When scaling a working single-node FSDP recipe, freeze the intended shard
+  degree and locality explicitly. Leaving `replicate=1` unchanged while world
+  size grows silently turns node-local shard groups into full-world groups;
+  prefer an explicitly validated HSDP mesh when preserving node-local shards.
+- Treat evaluation as distributed work. If independent DP replicas redundantly
+  generate the same validation set, shard examples across DP groups while SP/TP
+  peers keep identical inputs and every collective group executes equal padded
+  wave counts; score and retain only the unique, ordered examples.
 - Do not trade throughput for serialized algorithm equivalence unless the user explicitly asks to reproduce a larger logical batch or topology with fewer resources. Otherwise preserve the fastest correct parallel execution supported by the frozen protocol.
 - Persist rank-prefixed runtime output from the first process launch. Use tensor collectives for transport measurements and structured per-rank records for diagnostics; do not use Python object collectives or interleaved multi-rank stdout as a bandwidth oracle.
 - Treat process enumeration as racy: a PID may exit between discovery and
