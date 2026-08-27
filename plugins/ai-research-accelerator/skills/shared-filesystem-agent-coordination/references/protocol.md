@@ -81,6 +81,13 @@ missing authority itself.
 5. Run two real harmless deliveries per worker. Each must create the expected
    claim, ACK, invocation, terminal result, and final re-armed `watching` state.
 
+Process identity checks must execute on the process's host. Each worker writes
+an atomic readiness attestation containing the locally verified supervisor and
+dispatcher identities, adapter config, status, and timestamp. Node 0 accepts it
+only within a short TTL and still requires end-to-end deliveries. Never compare
+a remote PID against Node 0's `/proc`; PID values are namespace-local and may
+collide.
+
 Do not weaken this to “bootstrap alive OR dispatcher waiting.” A transient
 bootstrap can disappear when the Agent exits and creates a self-bootstrap
 deadlock.

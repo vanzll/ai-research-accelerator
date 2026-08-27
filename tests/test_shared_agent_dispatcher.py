@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -349,6 +351,47 @@ class SharedAgentDispatcherTests(unittest.TestCase):
             writer.join(timeout=2)
             self.assertFalse(writer.is_alive())
             popen.assert_not_called()
+
+    def test_remote_status_never_interprets_local_pids_as_worker_liveness(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = initialize_campaign_fixture(Path(directory))
+            campaign = fixture["campaign"]
+            MODULE.atomic_replace_json(
+                MODULE.campaign_supervisor_state_path(campaign, "node1"),
+                {"pid": os.getpid(), "status": "supervising"},
+            )
+            MODULE.atomic_replace_json(
+                MODULE.dispatcher_state_path(campaign, "node1"),
+                {"pid": os.getpid(), "status": "watching"},
+            )
+            output = io.StringIO()
+            with mock.patch.object(
+                MODULE, "short_hostname", return_value="remote-controller"
+            ), mock.patch.object(
+                MODULE, "campaign_supervisor_process_matches"
+            ) as supervisor_matches, mock.patch.object(
+                MODULE, "dispatcher_process_matches"
+            ) as dispatcher_matches, contextlib.redirect_stdout(output):
+                returncode = MODULE.status_campaign_dispatcher(
+                    argparse.Namespace(root=str(campaign), node="node1")
+                )
+            payload = json.loads(output.getvalue())
+            self.assertEqual(returncode, 2)
+            self.assertEqual(
+                payload["process_check"], "unavailable-from-remote-host"
+            )
+            self.assertIsNone(payload["supervisor"]["process_alive"])
+            self.assertIsNone(payload["dispatcher"]["process_alive"])
+            supervisor_matches.assert_not_called()
+            dispatcher_matches.assert_not_called()
+
+            with mock.patch.object(
+                MODULE, "short_hostname", return_value="remote-controller"
+            ), self.assertRaisesRegex(ValueError, "campaign-stop must run"):
+                MODULE.stop_campaign_dispatcher(
+                    argparse.Namespace(root=str(campaign), node="node1", timeout=1)
+                )
+            self.assertFalse(MODULE.worker_stop_path(campaign, "node1").exists())
 
     def test_worker_agent_config_rejects_reserved_codex_arguments(self):
         with tempfile.TemporaryDirectory() as directory:

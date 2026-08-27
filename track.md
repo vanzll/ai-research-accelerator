@@ -352,3 +352,9 @@
   the supervisor/dispatcher state publication window. The full repository now
   passes 46 tests.
 - Raised the synchronized plugin version to `0.6.0`.
+
+- During remote rollout review, fixed another distributed-control boundary:
+  `campaign-status` now returns unknown liveness when queried from a different
+  host, and `campaign-stop` refuses remote-host PID control. Worker-local
+  short-TTL attestations plus end-to-end request results are the coordinator's
+  remote readiness evidence. This correction is released as `0.6.1`.

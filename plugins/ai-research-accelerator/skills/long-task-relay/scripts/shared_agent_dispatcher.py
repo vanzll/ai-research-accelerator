@@ -2395,8 +2395,25 @@ def start_campaign_dispatcher(args: argparse.Namespace) -> int:
 
 def status_campaign_dispatcher(args: argparse.Namespace) -> int:
     root = Path(args.root).expanduser().resolve()
+    campaign = load_campaign_manifest(root)
+    expected_host = campaign["nodes"].get(args.node)
+    if expected_host is None:
+        raise ValueError(f"unknown campaign node: {args.node}")
     supervisor = read_json(campaign_supervisor_state_path(root, args.node))
     dispatcher = read_json(dispatcher_state_path(root, args.node))
+    observed_host = short_hostname()
+    if observed_host != expected_host:
+        supervisor["process_alive"] = None
+        dispatcher["process_alive"] = None
+        payload = {
+            "supervisor": supervisor,
+            "dispatcher": dispatcher,
+            "process_check": "unavailable-from-remote-host",
+            "expected_host": expected_host,
+            "observed_host": observed_host,
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 2
     supervisor["process_alive"] = campaign_supervisor_process_matches(
         supervisor, root, args.node
     )
@@ -2410,6 +2427,14 @@ def status_campaign_dispatcher(args: argparse.Namespace) -> int:
 
 def stop_campaign_dispatcher(args: argparse.Namespace) -> int:
     root = Path(args.root).expanduser().resolve()
+    campaign = load_campaign_manifest(root)
+    expected_host = campaign["nodes"].get(args.node)
+    if expected_host is None:
+        raise ValueError(f"unknown campaign node: {args.node}")
+    if short_hostname() != expected_host:
+        raise ValueError(
+            f"campaign-stop must run on {expected_host}, not {short_hostname()}"
+        )
     supervisor_path = campaign_supervisor_state_path(root, args.node)
     supervisor = read_json(supervisor_path)
     control_path = worker_control_lock_path(root, args.node)

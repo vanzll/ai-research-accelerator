@@ -95,6 +95,11 @@ dispatcher, or a log line is not readiness. A missing dispatcher cannot wake
 the Agent needed to install itself; repair that failure in the foreground
 worker turn or through an external actor.
 
+PID identity is node-local. Each worker performs its own `/proc` checks and
+atomically publishes a short-TTL readiness attestation. The coordinator checks
+attestation freshness and message round trips; it must never interpret a PID in
+its own namespace as proof that a remote process is alive.
+
 ## Use structured, fenced messages
 
 Use campaign-scoped atomic JSON records for dispatcher registration, authority,
