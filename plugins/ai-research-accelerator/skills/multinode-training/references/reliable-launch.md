@@ -24,6 +24,9 @@ constraints:
   workers verify them and may repair only semantics-preserving node-local state;
 - the coordinator Goal owns global recovery only through
   `FIRST_WORK_VALIDATED`; deterministic supervisors own waiting and trainers;
+- worker dispatchers are campaign/Goal-scoped and survive failed run attempts;
+  only attempt requests, processes, and evidence terminate on an attempt end.
+  Normal dispatcher shutdown requires Node 0's fenced `GOAL_COMPLETED` record;
 - `AGENT_BUS_READY` and request results are sidecar control evidence. They do
   not replace `NODE_LOCAL_READY`, `CLUSTER_READY`, `TRAINING_STARTED`, or
   `FIRST_WORK_VALIDATED` evidence;

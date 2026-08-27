@@ -29,12 +29,32 @@ operational repairs that preserve that contract; workers may repair strictly
 node-local operational state. Any uncertain or semantic change requires user
 approval.
 
+## Scope lifetime to the campaign
+
+Bind each worker dispatcher to the coordinator's campaign/Goal, not to one
+retry attempt. Attempts are replaceable execution lineages under one protected
+contract; the Agent communication channel must survive their failure. Keep one
+campaign-level dispatcher registration and heartbeat per worker, while storing
+requests, claims, ACKs, results, and terminal evidence under immutable
+attempt-specific paths.
+
+An attempt terminal returns the dispatcher to `watching`. Its only normal exit
+condition is an authenticated, fenced `GOAL_COMPLETED` directive explicitly
+published by the Node 0 coordinator. Request failure, attempt failure, idle
+time, workload exit, or temporary coordinator loss must not close it; enter a
+safe non-executing wait when authority is unavailable. The coordinator advances
+an atomic `active-attempt.json` and fencing epoch, and workers accept the new
+attempt only after validating its immutable manifest. If a legacy dispatcher is
+attempt-scoped, use make-before-break: start and validate the next dispatcher
+through the old bus, then close the old bus. Never close the only wake path
+before its successor is operational.
+
 ## Bootstrap coordinator-first
 
 The first-mile order is mandatory:
 
 1. The coordinator publishes and validates the pinned dispatcher tool,
-   immutable bus manifest, and final worker-specific bootstrap scripts.
+   immutable campaign manifest, and final worker-specific bootstrap scripts.
 2. Only then does the user enter each ordinary worker prompt.
 3. Each worker executes its existing script and starts the dispatcher under a
    durable owner independent of the Agent turn, such as tmux, a scheduler, or a
@@ -43,7 +63,9 @@ The first-mile order is mandatory:
    PID/start identity and exact thread/config, `process_alive=true`, and
    `status=watching`.
 5. The coordinator runs two harmless `publish -> resume -> result -> watching`
-   round trips per worker, proving first delivery and re-arming.
+   round trips per worker, proving first delivery and re-arming. Repeat this
+   only when dispatcher code, host/thread registration, or campaign authority
+   changes, not for every attempt.
 6. Only after every worker passes may the workflow publish real tasks.
 
 A bootstrap PID, `waiting`, `waiting-for-tool`, a tmux pane without the target
@@ -53,11 +75,12 @@ worker turn or through an external actor.
 
 ## Use structured, fenced messages
 
-Use attempt-scoped atomic JSON records for the manifest, authority/fencing
-epoch, inbox requests, claims, ACKs, terminal results, events, status, and
-terminal close. The coordinator is the only request publisher. Each worker
-owns its claim, ACK, result, and status paths. Preserve immutable history and
-reject stale attempts, epochs, nonces, hosts, threads, senders, and request IDs.
+Use campaign-scoped atomic JSON records for dispatcher registration, authority,
+heartbeat, active-attempt selection, and campaign close. Keep each attempt's
+manifest, inbox requests, claims, ACKs, terminal results, and events under its
+own immutable path. The coordinator is the only request publisher. Each worker
+owns its claim, ACK, result, and status paths. Preserve history and reject stale
+attempts, epochs, nonces, hosts, threads, senders, and request IDs.
 
 Delivery is at-least-once; processing must be idempotent. A request retry uses
 a new request ID. If an accepted request loses its Agent before a terminal

@@ -284,3 +284,24 @@
   skill now points back to the standalone coordination protocol.
 - Registered seven primary skills and raised the synchronized plugin version to
   `0.4.0`.
+
+## 2026-08-27 - Bind worker dispatchers to the campaign
+
+- A real A2-to-A3 recovery exposed that attempt-scoped dispatchers exited on
+  A2 terminal before A3 consumers existed, recreating the first-mile deadlock
+  despite successful within-attempt message delivery.
+- Corrected the lifecycle model: dispatcher registration, heartbeat, and close
+  are campaign/Goal-scoped; request data, process ownership, failure evidence,
+  and terminal results remain attempt-scoped.
+- Added atomic active-attempt adoption under the campaign fencing epoch. An
+  attempt failure returns workers to `watching`; only explicit Goal/campaign
+  completion closes the communication channel.
+- Added make-before-break compatibility for the current attempt-root
+  dispatcher: create and validate the successor through the old bus before
+  closing the old attempt.
+- Restricted normal dispatcher shutdown to one authenticated, fenced
+  `GOAL_COMPLETED` directive from the exact Node 0 coordinator. Attempt/request
+  failure, idle time, workload exit, or temporary coordinator loss now means
+  safe waiting; abnormal process death is supervisor-restarted rather than
+  interpreted as Goal completion.
+- Raised the synchronized plugin version to `0.4.1`.

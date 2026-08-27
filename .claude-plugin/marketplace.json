@@ -4,13 +4,13 @@
     "name": "vanzll"
   },
   "description": "Author-first workflows for accelerating research from experiments to publication.",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "plugins": [
     {
       "name": "ai-research-accelerator",
       "source": "./plugins/ai-research-accelerator",
       "description": "Run distributed training, plan experiments, analyze results, write papers, and process author review.",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "author": {
         "name": "vanzll"
       },

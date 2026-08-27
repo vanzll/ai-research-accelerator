@@ -6,9 +6,9 @@ shared-filesystem Agent Bus.
 ## Roles and authority
 
 The coordinator is the only writer of shared source bundles, immutable task
-contracts, attempt manifests, and cross-worker requests. It holds an
-experiment- or task-scoped lock and publishes a monotonically increasing
-fencing epoch. There is no silent coordinator takeover within an attempt.
+contracts, attempt manifests, and cross-worker requests. It holds a
+campaign-scoped lock and publishes a monotonically increasing fencing epoch.
+There is no silent coordinator takeover within an attempt.
 
 Workers own only their node/session-local execution state and their structured
 claims, acknowledgements, results, and events. They never patch shared source
@@ -22,37 +22,39 @@ Use one-writer paths instead of a shared Markdown control document:
 
 ```text
 coordination/TASK/
+  campaign-manifest.json
+  campaign-terminal.json
+  dispatcher/node1/state.json
   active-attempt.json
   attempts/A2/
     manifest.json
     coordinator-owner.json
-    dispatcher/node1/state.json
     inbox/node1/REQUEST_ID.json
     claims/node1/REQUEST_ID.json
     acks/node1/REQUEST_ID.json
     results/node1/REQUEST_ID.json
     invocations/node1/REQUEST_ID.json
     events/node1/SEQUENCE-EVENT.json
-    terminal.json
+    attempt-terminal.json
 ```
 
 Write a temporary file, flush it, then atomically rename it into place. Inbox,
 claim, ACK, result, invocation, event, and terminal records are immutable.
 Mutable state files are atomically replaced only by their owning process.
 
-Every record should carry the schema version, task and attempt, nonce, fencing
-epoch, protected-contract hash, sender, target, hostname/session identity, UTC
-timestamp, request or event ID, action, completion predicate, and compact
-evidence paths. Readers reject stale or mismatched records before side effects.
-Never persist credentials in the bus.
+Every attempt record should carry the schema version, task and attempt, nonce,
+fencing epoch, protected-contract hash, sender, target, hostname/session
+identity, UTC timestamp, request or event ID, action, completion predicate, and
+compact evidence paths. Readers reject stale or mismatched records before side
+effects. Never persist credentials in the bus.
 
 ## First-mile bootstrap
 
 The bus cannot repair a missing worker dispatcher, so bootstrap is a distinct
 foreground phase:
 
-1. The coordinator prepares a pinned tool checkout, manifest, and complete
-   host-specific scripts before workers are prompted.
+1. The coordinator prepares a pinned tool checkout, campaign manifest, and
+   complete host-specific scripts before workers are prompted.
 2. A worker prompt executes its existing script; it does not create a future
    waiter or return while dependencies are absent.
 3. The script starts the dispatcher under a durable process owner that survives
@@ -66,6 +68,32 @@ foreground phase:
 Do not weaken this to “bootstrap alive OR dispatcher waiting.” A transient
 bootstrap can disappear when the Agent exits and creates a self-bootstrap
 deadlock.
+
+Bootstrap is normally once per campaign, not once per retry. Repeat it only if
+the dispatcher implementation, worker host/thread identity, or campaign
+authority changes.
+
+## Attempt transitions
+
+An attempt failure is data for the coordinator, not a reason to destroy the
+communication channel. Preserve its terminal evidence, clean its owned domain
+processes, and return the campaign dispatcher to `watching`.
+
+To advance from A2 to A3:
+
+1. prepare and validate A3 code, manifest, and worker actions while the campaign
+   dispatchers remain live;
+2. under the campaign lock, atomically publish the new `active-attempt.json`
+   and fencing epoch;
+3. let every persistent dispatcher validate and acknowledge the new attempt;
+4. dispatch A3 work only after all workers adopted it;
+5. keep A2 evidence immutable and reject any late A2 request.
+
+If the installed implementation still binds a dispatcher process to one
+attempt root, use a compatibility handoff: publish A3 and its bootstraps first,
+ask the live A2 worker Agents to start A3 dispatchers, validate A3 on every
+worker, and only then close A2. This make-before-break bridge is mandatory; an
+A2 terminal must never remove the only path capable of starting A3.
 
 ## Request lifecycle
 
@@ -122,7 +150,16 @@ Interpret states conservatively:
 - stale heartbeat, failed delivery, or `needs_coordinator` requires attention;
 - bus readiness never substitutes for domain workload evidence.
 
-When the coordinator publishes an immutable close record, dispatchers finish
-owned work, write final state, and exit without another Agent wake. Archive
-compact bus metadata; do not delete formal lineage merely because the workflow
-completed.
+The only normal dispatcher shutdown is an immutable `GOAL_COMPLETED` directive
+published by the exact Node 0 coordinator under the current campaign lock and
+fencing epoch. It must reference the Goal completion evidence and campaign
+identity. Dispatchers validate that record, finish or safely terminate owned
+bounded invocations according to contract, write final state, and exit without
+another Agent wake.
+
+Attempt terminal, request failure, idle timeout, trainer exit, missing next
+attempt, or temporary coordinator loss must not trigger dispatcher shutdown.
+When authority is unavailable or ambiguous, remain alive in a fenced
+non-executing wait. If the dispatcher process crashes, its durable supervisor
+restarts it; a crash is not campaign completion. Archive compact bus metadata
+after `GOAL_COMPLETED`; do not delete formal lineage.

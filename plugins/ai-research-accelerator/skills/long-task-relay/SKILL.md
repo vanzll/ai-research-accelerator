@@ -113,8 +113,11 @@ waiting without consuming model tokens.
 The worker bootstrap must start the dispatcher from its own ordinary thread
 using `$CODEX_THREAD_ID`, verify `status=watching`, and then end the turn. Do
 not start a worker Goal and do not attach this dispatcher to the coordinator
-Goal. Use the immutable attempt-specific manifest created by the coordinator;
-never reuse a dispatcher root across attempts.
+Goal. The desired lifecycle is campaign-scoped: preserve one worker dispatcher
+across retry attempts and isolate request data beneath immutable attempt paths.
+If the installed dispatcher still accepts only one attempt root, treat it as a
+compatibility implementation and perform make-before-break handoff to the next
+attempt before closing the old root.
 
 Treat this initial worker wake path as a separate first-mile bootstrap. Before
 the user sends worker prompts, the coordinator must publish the exact tool
@@ -152,9 +155,13 @@ The dispatcher treats accepted-but-incomplete work conservatively: it records
 `needs_coordinator` and requires a new request ID rather than replaying an
 unknown side effect. It does not execute request text as shell code; an idle
 worker agent interprets one bounded request under the frozen contract.
-After first-work success or an abandoned campaign, Node 0 runs `close`; worker
-dispatchers observe the immutable terminal record and exit without another
-agent wake.
+The only normal dispatcher shutdown is a fenced `GOAL_COMPLETED` directive from
+the exact Node 0 coordinator. Attempt or request failure, idle time, workload
+exit, and temporary coordinator loss never authorize close; remain alive in a
+safe waiting state. A durable owner restarts abnormal dispatcher exits. For an
+attempt-scoped compatibility dispatcher, start and validate its successor
+through the old bus before any old-root `close`; use that close only as a
+mechanical handoff after the campaign dispatcher owns the Goal.
 
 ## Minimal Example
 
