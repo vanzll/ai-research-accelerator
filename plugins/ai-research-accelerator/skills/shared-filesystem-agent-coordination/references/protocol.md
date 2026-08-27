@@ -100,6 +100,14 @@ ask the live A2 worker Agents to start A3 dispatchers, validate A3 on every
 worker, and only then close A2. This make-before-break bridge is mandatory; an
 A2 terminal must never remove the only path capable of starting A3.
 
+Do not infer liveness from a readable state file or a zero-exit `status`
+inspection. Before migration, classify every matching legacy instance from
+its persisted process identity, `process_alive`, `status`, and
+`active_request_id`. Dead or stopped records are history and require no close;
+a live idle watcher may be closed only after its successor is accepted; a live
+busy watcher blocks handoff until its request reaches terminal state. This
+prevents both false migration failures and concurrent exact-thread resumes.
+
 ## Request lifecycle
 
 1. The coordinator publishes one immutable bounded request.

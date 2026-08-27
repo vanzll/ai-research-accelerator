@@ -49,6 +49,14 @@ attempt-scoped, use make-before-break: start and validate the next dispatcher
 through the old bus, then close the old bus. Never close the only wake path
 before its successor is operational.
 
+During that handoff, a successful `status` command proves only that persisted
+state is readable; it does not prove the legacy process is alive. Classify the
+old instance using `process_alive`, `status`, and `active_request_id` together:
+ignore stopped/dead history, close a live idle `watching` instance only after
+the campaign successor is ready, and block migration while a live legacy
+request is active. Never let two dispatchers concurrently resume the same
+exact thread.
+
 ## Bootstrap coordinator-first
 
 The first-mile order is mandatory:
