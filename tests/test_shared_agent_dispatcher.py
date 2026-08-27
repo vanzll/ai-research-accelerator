@@ -226,6 +226,43 @@ class SharedAgentDispatcherTests(unittest.TestCase):
             restart_backoff=0.1,
         )
 
+    def test_process_matching_honors_omitted_default_instance_id(self):
+        root = Path("/tmp/campaign-default-instance").resolve()
+        state = {
+            "pid": os.getpid(),
+            "process_start_token": MODULE.process_start_token(os.getpid()),
+            "instance_id": MODULE.DEFAULT_INSTANCE_ID,
+        }
+        common = [
+            "python3",
+            str(SCRIPT),
+            "--root",
+            str(root),
+            "--node",
+            "node1",
+        ]
+
+        with mock.patch.object(
+            MODULE,
+            "process_argv",
+            return_value=[common[0], common[1], "campaign-run", *common[2:]],
+        ):
+            self.assertTrue(MODULE.dispatcher_process_matches(state, root, "node1"))
+
+        with mock.patch.object(
+            MODULE,
+            "process_argv",
+            return_value=[
+                common[0],
+                common[1],
+                "campaign-supervise",
+                *common[2:],
+            ],
+        ):
+            self.assertTrue(
+                MODULE.campaign_supervisor_process_matches(state, root, "node1")
+            )
+
     def test_campaign_dispatcher_survives_attempt_transition_and_only_goal_completes(self):
         with tempfile.TemporaryDirectory() as directory:
             fixture = initialize_campaign_fixture(Path(directory))

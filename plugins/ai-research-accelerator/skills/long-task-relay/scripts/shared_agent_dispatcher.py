@@ -22,6 +22,7 @@ from typing import Any
 
 
 SCHEMA_VERSION = 1
+DEFAULT_INSTANCE_ID = "foreground"
 TERMINAL_RESULT_STATES = {"succeeded", "failed", "needs_coordinator"}
 ACTIVE_DISPATCHER_STATES = {
     "waiting-for-manifest",
@@ -157,6 +158,13 @@ def option_value(argv: list[str], option: str) -> str | None:
         return None
 
 
+def option_value_or_default(
+    argv: list[str], option: str, default: str
+) -> str:
+    value = option_value(argv, option)
+    return default if value is None else value
+
+
 def dispatcher_process_matches(state: dict[str, Any], root: Path, node: str) -> bool:
     pid = int(state.get("pid", -1))
     if not process_alive(pid):
@@ -168,7 +176,10 @@ def dispatcher_process_matches(state: dict[str, Any], root: Path, node: str) -> 
         any(Path(value).name == "shared_agent_dispatcher.py" for value in argv)
         and option_value(argv, "--root") == str(root)
         and option_value(argv, "--node") == node
-        and option_value(argv, "--instance-id") == state.get("instance_id")
+        and option_value_or_default(
+            argv, "--instance-id", DEFAULT_INSTANCE_ID
+        )
+        == state.get("instance_id")
     )
 
 
@@ -1856,7 +1867,10 @@ def campaign_supervisor_process_matches(
         and "campaign-supervise" in argv
         and option_value(argv, "--root") == str(root)
         and option_value(argv, "--node") == node
-        and option_value(argv, "--instance-id") == state.get("instance_id")
+        and option_value_or_default(
+            argv, "--instance-id", DEFAULT_INSTANCE_ID
+        )
+        == state.get("instance_id")
     )
 
 
@@ -2421,7 +2435,7 @@ def build_parser() -> argparse.ArgumentParser:
         dispatch.add_argument("--root", required=True)
         dispatch.add_argument("--node", required=True)
         dispatch.add_argument("--thread-id", required=True)
-        dispatch.add_argument("--instance-id", default="foreground")
+        dispatch.add_argument("--instance-id", default=DEFAULT_INSTANCE_ID)
         dispatch.add_argument("--session-path")
         dispatch.add_argument("--workdir", required=True)
         dispatch.add_argument("--codex-path", default="codex")
@@ -2440,7 +2454,7 @@ def build_parser() -> argparse.ArgumentParser:
         dispatch.add_argument("--root", required=True)
         dispatch.add_argument("--node", required=True)
         dispatch.add_argument("--thread-id", required=True)
-        dispatch.add_argument("--instance-id", default="foreground")
+        dispatch.add_argument("--instance-id", default=DEFAULT_INSTANCE_ID)
         dispatch.add_argument("--session-path")
         dispatch.add_argument("--workdir", required=True)
         dispatch.add_argument("--codex-path", default="codex")
