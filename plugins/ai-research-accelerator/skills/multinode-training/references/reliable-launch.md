@@ -287,8 +287,27 @@ Treat cluster-specific resource leases such as GPU reservation commands as confi
 
 - acquire or release resources at the correct point;
 - install cleanup traps before starting owned services or workers;
-- restore the site's idle/lease state after success, failure, signal, or crash where possible;
+- restore the site's idle/lease state after success, failure, signal, or crash
+  only when the exiting owner still holds the current node-level lease;
 - avoid stopping unowned processes without explicit authorization.
+
+Resource ownership is node-scoped and can outlive or overlap an attempt. Guard
+transitions with a node-local lock and persist the campaign/attempt owner,
+process identity, and monotonically increasing lease generation. Starting a
+successor atomically advances that generation before releasing the idle
+reservation. An attempt's EXIT trap submits a conditional release: it restores
+the idle reservation only if its owner/generation still matches and no current
+successor workload is active. Otherwise it records a stale-cleanup no-op. Do
+not implement this as an unconditional `gpu_hold`, a process-name scan, or a
+per-attempt `cleanup_done` flag; those mechanisms cannot prevent an older
+attempt from overwriting a newer attempt's resource state.
+
+Test at least this ordering for a reusable hook: attempt A acquires, attempt B
+supersedes A, A exits late, and the idle reservation remains absent while B is
+active; when B exits, the idle state is restored exactly once. Also test
+duplicate signals and a dead recorded owner. Cleanup evidence should include
+the requested owner/generation, observed current owner/generation, and whether
+the transition was applied or rejected, without exposing unrelated processes.
 
 ## Retry policy
 

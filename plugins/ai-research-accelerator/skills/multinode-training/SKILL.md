@@ -144,6 +144,12 @@ starting the new trainer.
   them. After sourcing, sanitize role-inappropriate variables at the child
   boundary as required above.
 - Establish an owned worker process group through a child handshake or bounded polling. Never make cleanup correctness depend on one immediate PID/PGID observation after `setsid` or a background fork.
+- Treat node-level resource hooks such as idle GPU reservation as a fenced
+  lease, not an attempt-local boolean. Acquisition publishes an owner and
+  monotonically newer generation under a node-local lock. A cleanup trap may
+  restore the idle state only if its owner/generation is still current and no
+  successor workload lease is active; a stale attempt exiting after its
+  successor must be a no-op. Idempotency within one trap is insufficient.
 - On any node failure, terminate the whole worker group unless the framework's elastic recovery semantics were deliberately designed and tested.
 - Preserve failed attempt evidence. Retry with a new attempt and nonce after repairing the cause; do not overwrite ambiguous lineage.
 - Before relying on frozen code on multiple nodes, prove reachability and

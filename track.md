@@ -437,3 +437,17 @@
   semantics.
 - Synchronized the installed runtime skill, validated both source and installed
   copies, and raised the plugin version to `0.7.0`.
+
+## 2026-08-30 - Fence node-level GPU reservation cleanup across attempts
+
+- A verified overlapping-attempt failure showed that attempt-local cleanup
+  idempotency is insufficient: a retired attempt exited after its successor had
+  started and unconditionally restored the node's idle GPU reservation,
+  injecting an occupancy process into the live successor.
+- Replaced the ambiguous “restore on exit” guidance with a node-level fenced
+  lease invariant. Acquisition advances an owner/generation under a local lock;
+  cleanup restores idle state only when its owner/generation remains current
+  and no successor lease is active. Stale cleanup is an evidenced no-op.
+- Added the required regression ordering: A acquires, B supersedes, A exits
+  late without restoring idle state, then B exits and restores it exactly once;
+  duplicate signals and dead recorded owners are also covered conceptually.
