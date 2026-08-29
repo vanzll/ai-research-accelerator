@@ -104,6 +104,16 @@ readiness record across campaign roots or protected-contract hashes. Bring up
 and validate the expected campaign with make-before-break, then retire an old
 campaign only under its own closure authority.
 
+Retirement cleanup is a per-host, identity-fenced operation. Before the next
+campaign launches its workload, each worker attests that retired campaign
+owners, supervisors, dispatchers, Agent invocations, and domain processes are
+absent. A process may be signaled only after its campaign identity, PID/start
+identity, and command line agree; an active request must first drain or receive
+an explicit terminal disposition. Delete only dead-owner ephemeral PID, socket,
+lock, and incomplete temporary state. Retain immutable bus records, logs, and
+domain evidence. The coordinator may archive shared metadata after all workers
+acknowledge cleanup, but workers must not concurrently delete shared state.
+
 Bootstrap is normally once per campaign, not once per retry. Repeat it only if
 the dispatcher implementation, worker host identity, execution adapter, or
 campaign authority changes. A new TUI conversation is irrelevant in fresh

@@ -403,3 +403,10 @@
 - Added the same invariant to multinode cluster readiness and documented
   make-before-break migration: validate the expected new campaign before
   retiring an old campaign under its own closure authority.
+- Added validated campaign-transition hygiene: before a new workload starts,
+  every host retires only identity-matched old owners, dispatchers, Agents, and
+  domain process groups; active requests drain first. Dead-owner PID files,
+  sockets, locks, and incomplete temporary state may be removed, while logs,
+  manifests, requests/results, markers, checkpoints, and failure lineage remain
+  preserved. Broad process kills, cache deletion, and concurrent shared-state
+  cleanup by workers are explicitly prohibited.

@@ -81,6 +81,18 @@ the campaign successor is ready, and block migration while a live legacy
 request is active. Never let two dispatchers concurrently resume the same
 exact thread.
 
+Before the new campaign launches its workload, reconcile older campaigns on
+every host. Stop only processes and durable owners whose campaign root/ID,
+recorded PID/start identity, and command line all match the retired campaign;
+drain or resolve active requests first. Remove only ephemeral runtime artifacts
+whose owner is proven dead, such as PID files, sockets, locks, and incomplete
+temporary directories. Preserve manifests, requests, results, events, logs,
+markers, and other audit evidence; archive them if useful rather than deleting
+them. Never use broad process-name kills, delete shared caches, or let a worker
+mutate another node's state. If the old bus is the only path that can bootstrap
+the successor, finish make-before-break first and perform this cleanup before
+the new workload starts.
+
 ## Bootstrap coordinator-first
 
 Coordinator-first is an authority ordering rule, not necessarily a manual

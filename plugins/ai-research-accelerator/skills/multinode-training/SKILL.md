@@ -104,6 +104,17 @@ campaign is unrelated and cannot satisfy readiness.
 `NODE_LOCAL_READY`, `CLUSTER_READY`, `TRAINING_STARTED`, and
 `FIRST_WORK_VALIDATED` evidence before claiming distributed training success.
 
+Before launching a new campaign's GPU workload, have every host perform
+identity-scoped retirement cleanup for older campaigns: stop only verified old
+trainer, reward-service, Agent, supervisor, and tmux process groups; restore
+the node's idle GPU reservation policy; and remove only dead-owner ephemeral
+locks, PID files, sockets, and incomplete temporary state. Preserve experiment
+logs, markers, results, checkpoints, and immutable failure lineage. Broad
+`pkill` patterns, cache deletion, and concurrent worker mutation of shared
+evidence are forbidden. When the old Agent bus is needed to bootstrap its
+successor, validate the successor first, then clean the old campaign before
+starting the new trainer.
+
 ## Non-negotiable correctness rules
 
 - All ranks must execute distributed collectives in the same order. Never put a collective checkpoint, metric reduction, or barrier inside a global-rank-zero-only branch.
