@@ -152,6 +152,24 @@ only after the basic throughput path is healthy. Retain margin for the largest
 transient allocation; rollout completion alone is not evidence that reward
 processing or backward will fit.
 
+Choose reward placement as part of the parallel contract. A node-local sidecar
+on one training GPU creates asymmetric memory pressure and can make only rank 0
+OOM during decode or first backward. A per-rank resident scorer can balance
+requests and remove RPC serialization when the model fits on every rank; keep
+its per-call activation batch small and gather ordered rewards across SP/TP
+peers. Conversely, replicating a large scorer on every rank may waste too much
+state memory. Compare resident-per-rank, dedicated-GPU, node-sidecar, and remote
+pool placement with phase-specific memory and latency rather than assuming one
+layout is universally best.
+
+Do not confuse activation checkpointing with saved-tensor CPU offload.
+Checkpointing trades extra forward compute for lower GPU activation storage.
+CPU offload adds host-RAM lifetime and PCIe/network copies; moving a large
+block's saved tensors off GPU can consume extreme memory across local ranks and
+turn a GPU OOM into host-memory pressure. Treat CPU offload as an explicit
+measured topology choice, never as an automatic OOM repair or an unreported
+baseline optimization.
+
 ## Failure report
 
 A useful report states:

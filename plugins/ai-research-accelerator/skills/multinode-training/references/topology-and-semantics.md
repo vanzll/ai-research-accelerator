@@ -141,6 +141,38 @@ Streaming is equivalent only if pending gradients do not affect forward behavior
 
 Increasing microbatch size uses more memory and may improve throughput; increasing the number of accumulated microbatches increases the logical batch. Do not conflate these controls.
 
+## Account for diffusion and trajectory work explicitly
+
+In sequence and diffusion RL, a training sample is not generally one token.
+Define the tensor entering one forward/backward and the ranks that jointly own
+it. A video diffusion sample at one training timestep commonly contains the
+complete latent token field for one trajectory; an SP group may split those
+tokens while jointly owning the same sample microbatch. Therefore a configured
+microbatch is usually trajectories per sample-owning mesh, not trajectories per
+physical GPU and not latent tokens.
+
+Estimate update work from executed model calls, not only global batch:
+
+```text
+model_calls_per_update = sample_microbatches * selected_timesteps
+                         * effective_model_branches * replay_passes
+```
+
+Record each factor. Training stored diffusion timesteps is often a serial
+recompute loop even when rollout traverses the same number of steps quickly
+under `no_grad`. Activation checkpointing adds backward recomputation; classic
+CFG can double the effective model batch. Randomly selecting fewer timesteps or
+using a distilled single branch changes compute and must be frozen as algorithm
+protocol, not introduced as an unreported infra optimization.
+
+Distinguish two sequential optimizer windows over disjoint sample groups from
+replaying the same trajectories twice. Both produce two optimizer steps, but
+only the latter repeats sample work. Verify row ownership, model-call counts,
+zero-grad/clip/scheduler boundaries, and whether the second window evaluates
+the post-first-step policy. Optimizer-step curves do not reveal duplicated
+GPU-hours, so log rollout count, unique trajectories, selected timestep count,
+model calls, and wall time together.
+
 Before launch, report both the equivalence claim and its cost. Include generated samples, rollout waves, optimizer steps, wall time, and GPU-hours in comparisons. Serialization may preserve the estimator while substantially changing throughput; optimizer-step curves alone can conceal that cost.
 
 ## Rank and collective semantics
@@ -189,6 +221,13 @@ a designated model-parallel leader. Barrier before centralized scoring and
 validate exact output count/order. Report DP groups, wave count, padded slots,
 generation time, reward time, and retained/scored counts so acceleration is
 auditable rather than inferred from wall time.
+
+Apply the same ownership analysis to evaluation rewards. If every rank already
+has a compatible resident scorer and outputs are on shared storage, assign
+distinct real items to scorer ranks and gather indexed score records. Do not
+parallelize generation and then serialize all scoring on rank 0 without
+measuring that tail. Preserve exact item order and compute the paper metric from
+the same population after the gather.
 
 ## Checkpoint contract
 
