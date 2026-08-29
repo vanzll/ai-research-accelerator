@@ -417,3 +417,23 @@
   asset-download, tmux/scheduler, dispatcher, probe, service, evaluator, and
   trainer child shell. Prompts must name it explicitly; secret values are
   checked only for presence and never logged or serialized to shared state.
+
+## 2026-08-30 - Add evidence-gated continuous skill learning
+
+- Added `continuous-skill-learning`, a meta-skill that runs after user
+  corrections, avoidable retries, evidence-backed reversals, reusable review
+  findings, and validated recoveries. It explicitly models persistent learning
+  as skill/script/test improvement rather than model-weight training.
+- The workflow records primary evidence, tests generality, and then chooses
+  delete, replace, narrow, extend, relocate, create, or no change. It prefers
+  correcting and pruning the narrowest existing skill; a new skill is reserved
+  for a distinct reusable capability.
+- Added a decision rubric that separates verified, supported, and speculative
+  lessons; derives failure/cause/invariant/mechanical-check statements; limits
+  per-incident change size; and requires periodic consolidation.
+- Added workspace-level automatic triggering so a qualifying lesson audit runs
+  after the primary task is stable without another user reminder. Learning does
+  not expand permissions, encode secrets, or silently change scientific/user
+  semantics.
+- Synchronized the installed runtime skill, validated both source and installed
+  copies, and raised the plugin version to `0.7.0`.

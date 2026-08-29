@@ -1,0 +1,4 @@
+interface:
+  display_name: "Continuous Skill Learning"
+  short_description: "Distill verified task lessons into reusable skills."
+  default_prompt: "Audit this task for verified reusable lessons, then correct, prune, or create the relevant skill and validate the update."
