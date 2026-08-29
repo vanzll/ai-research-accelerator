@@ -77,9 +77,12 @@ missing authority itself.
 3. The script starts the dispatcher under a durable process owner that survives
    the Agent turn. The owner restarts an abnormally exited campaign supervisor;
    that supervisor restarts an abnormally exited dispatcher.
-4. Acceptance is conjunctive: state file present, expected PID/start identity,
-   exact host/execution-adapter config, process alive, durable owner alive,
-   `agent_mode=fresh`, and `status=watching`.
+4. Acceptance is conjunctive: read state only from the canonical expected
+   campaign root; require exact campaign ID, protected-contract hash,
+   coordinator authority, current attempt root/ID/nonce/fencing epoch,
+   node/host, dispatcher generation, PID/start identity and execution adapter;
+   then require process alive, durable owner alive, `agent_mode=fresh`, and
+   `status=watching`.
 5. Run two real harmless deliveries per worker. Each must create the expected
    claim, ACK, invocation, terminal result, and final re-armed `watching` state.
 
@@ -93,6 +96,13 @@ collide.
 Do not weaken this to “bootstrap alive OR dispatcher waiting.” A transient
 bootstrap can disappear when the Agent exits and creates a self-bootstrap
 deadlock.
+
+Likewise, do not weaken it to “any dispatcher on this node is healthy.” An old
+campaign can remain correctly alive and `watching` while having no authority
+over the new campaign. Never scan for an arbitrary state file or reuse a
+readiness record across campaign roots or protected-contract hashes. Bring up
+and validate the expected campaign with make-before-break, then retire an old
+campaign only under its own closure authority.
 
 Bootstrap is normally once per campaign, not once per retry. Repeat it only if
 the dispatcher implementation, worker host identity, execution adapter, or

@@ -385,3 +385,21 @@
   actual staging/import path, progress-aware collective deadlines, TOCTOU-safe
   process cleanup, and phase-specific co-located reward/trainer memory analysis.
 - Raised synchronized Codex and Claude plugin manifests to `0.6.2`.
+
+## 2026-08-30 - Fence worker readiness to the exact campaign
+
+- A remote Flow-ART launch exposed a stale-control-plane acceptance bug: Node1
+  had a healthy `watching` dispatcher for an older UR2POINT campaign, and a
+  generic worker check incorrectly treated it as readiness for the new
+  distilled campaign.
+- Clarified that a campaign is the control-plane namespace for one coordinator
+  Goal and one immutable protected contract across retries. A healthy process
+  from another campaign has no authority over the current experiment.
+- Worker acceptance now explicitly binds the canonical campaign root and ID,
+  protected/science-contract hash, coordinator authority, node/host,
+  dispatcher generation and process identity, execution adapter, and current
+  attempt root/ID/nonce/fencing epoch. Arbitrary `state.json` discovery is
+  forbidden.
+- Added the same invariant to multinode cluster readiness and documented
+  make-before-break migration: validate the expected new campaign before
+  retiring an old campaign under its own closure authority.

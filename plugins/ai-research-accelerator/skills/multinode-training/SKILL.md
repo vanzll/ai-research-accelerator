@@ -95,6 +95,11 @@ Worker dispatchers remain alive across failed training attempts and terminate
 normally only after validating the exact Node 0 host and Goal thread's fenced
 `GOAL_COMPLETED` directive; attempt evidence and trainer processes remain
 attempt-scoped. Failure or idle states do not authorize dispatcher shutdown.
+Cluster readiness must bind each worker to the exact expected Agent campaign:
+canonical campaign root/ID, science-contract hash, coordinator authority,
+node/host, dispatcher process generation, and current attempt/nonce/fencing
+epoch must all match. A healthy dispatcher from an older experiment or
+campaign is unrelated and cannot satisfy readiness.
 `AGENT_BUS_READY` proves only Agent coordination. Require independent
 `NODE_LOCAL_READY`, `CLUSTER_READY`, `TRAINING_STARTED`, and
 `FIRST_WORK_VALIDATED` evidence before claiming distributed training success.

@@ -50,6 +50,18 @@ campaign-level dispatcher registration and heartbeat per worker, while storing
 requests, claims, ACKs, results, and terminal evidence under immutable
 attempt-specific paths.
 
+A campaign is the control-plane namespace for one coordinator Goal and one
+immutable protected contract across its retries. It is not interchangeable
+with an experiment name, node role, healthy process, or older campaign that
+happens to use the same host and tool. Never discover readiness by selecting
+"the first healthy dispatcher" or by searching for any `state.json`. Accept a
+worker only from the canonical expected campaign root and require its campaign
+ID, protected-contract hash, coordinator authority, worker node/host,
+dispatcher generation and process identity, execution adapter, active attempt
+root/ID/nonce, and fencing epoch to match current authority. A mismatch is an
+unrelated or stale dispatcher, not partial readiness; it must not satisfy a
+barrier, receive a request, or cause bootstrap to report success.
+
 An attempt terminal returns the dispatcher to `watching`. Its only normal exit
 condition is a fenced `GOAL_COMPLETED` directive explicitly published by the
 exact Node 0 host and Goal thread. Request failure, attempt failure, idle
@@ -91,7 +103,8 @@ The first-mile logical order is mandatory:
    authority wait until step 1 completes.
 3. Worker acceptance requires all of: persisted `state.json`, matching
    PID/start identity, host and execution-adapter config,
-   `process_alive=true`, `agent_mode=fresh`, and `status=watching`.
+   `process_alive=true`, `agent_mode=fresh`, `status=watching`, and the exact
+   campaign/contract/authority/active-attempt identity described above.
 4. The coordinator runs two harmless `publish -> spawn -> result -> watching`
    round trips per worker, proving first delivery and re-arming. Repeat this
    only when dispatcher code, process generation, host/adapter registration, or
