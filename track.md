@@ -410,3 +410,10 @@
   manifests, requests/results, markers, checkpoints, and failure lineage remain
   preserved. Broad process kills, cache deletion, and concurrent shared-state
   cleanup by workers are explicitly prohibited.
+- Added an environment-boundary rule after the distilled asset handoff exposed
+  that a runner could require a model path without giving its downloader the
+  user's proxy/Hugging Face environment. The user/cluster bootstrap is now a
+  declared launch-contract field and must be sourced inside every independent
+  asset-download, tmux/scheduler, dispatcher, probe, service, evaluator, and
+  trainer child shell. Prompts must name it explicitly; secret values are
+  checked only for presence and never logged or serialized to shared state.

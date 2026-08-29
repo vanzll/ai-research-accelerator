@@ -197,6 +197,13 @@ session changes. Never hard-code a TUI thread into a reusable campaign script.
 Freeze extra Codex arguments at bootstrap; the dispatcher rejects arguments
 that could override its prompt or structured-result channel.
 
+When the campaign declares a user/cluster environment bootstrap, source it
+inside the durable owner, supervisor/dispatcher, and each fresh Agent's final
+child shell rather than relying on the initiating conversation's environment.
+This may provide proxy, authentication, executable, or runtime settings.
+Validate required secret-bearing variables by presence only and never persist
+their values in campaign state, requests, results, prompts, or logs.
+
 The protocol is transport-independent even though this implementation uses a
 shared filesystem. On clusters without shared storage, replace atomic files
 with a durable queue/object-store adapter that preserves the same immutable

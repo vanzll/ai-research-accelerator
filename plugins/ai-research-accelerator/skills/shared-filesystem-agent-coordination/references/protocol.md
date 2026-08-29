@@ -149,6 +149,13 @@ additional CLI arguments in dispatcher state. Do not persist credentials.
 Reject additional arguments that can replace the dispatcher-owned prompt,
 output schema, output path, or ephemeral lifecycle.
 
+If the campaign manifest declares an environment bootstrap, every durable
+owner, dispatcher, and fresh Agent child sources it inside its own final shell
+before resolving tools or making network calls. A parent TUI or coordinator
+environment is not evidence of child inheritance. Check secret-bearing
+variables only for presence, disable command tracing around setup, and never
+serialize their values into shared records or logs.
+
 ## Attempt transitions
 
 An attempt failure is data for the coordinator, not a reason to destroy the

@@ -133,6 +133,16 @@ starting the new trainer.
 - Activate and verify the exact Python/launcher/import paths inside the final
   persistent child shell. A parent-shell import or Conda activation does not
   prove that tmux, a scheduler, or a later relay inherited the same environment.
+- Treat the user/cluster environment bootstrap as part of the launch contract.
+  Every independent child-shell boundary that prepares assets or starts a
+  downloader, dispatcher, probe, reward service, evaluator, or trainer must
+  source the declared bootstrap inside that final shell before doing work. This
+  is where site proxy, Hugging Face authentication, Python/Conda paths, and
+  communication-library settings may be established. Verify required variables
+  by presence or non-secret fingerprints; never print their values, persist
+  credentials in shared state, or rely on a parent Agent shell having sourced
+  them. After sourcing, sanitize role-inappropriate variables at the child
+  boundary as required above.
 - Establish an owned worker process group through a child handshake or bounded polling. Never make cleanup correctness depend on one immediate PID/PGID observation after `setsid` or a background fork.
 - On any node failure, terminate the whole worker group unless the framework's elastic recovery semantics were deliberately designed and tested.
 - Preserve failed attempt evidence. Retry with a new attempt and nonce after repairing the cause; do not overwrite ambiguous lineage.

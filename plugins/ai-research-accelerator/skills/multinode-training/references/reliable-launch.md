@@ -126,12 +126,15 @@ Never equate one cache implementation with model identity. A project-local check
 ### Shared filesystem
 
 1. The coordinator takes a single-writer lock with bounded acquisition time.
-2. It performs the discovery-and-import protocol above.
-3. If network transfer is still required, it downloads to a temporary directory that is not a valid model path.
-4. It pins an immutable revision and validates required files, sizes, and checksums when available.
-5. It publishes the final directory or manifest atomically.
-6. It writes `ASSETS_READY` last.
-7. Workers verify the same manifest and then load only from explicit paths.
+2. Inside the final asset-preparation child shell, it sources the declared
+   user/cluster environment bootstrap and verifies required proxy,
+   authentication, and toolchain variables without logging their values.
+3. It performs the discovery-and-import protocol above.
+4. If network transfer is still required, it downloads to a temporary directory that is not a valid model path.
+5. It pins an immutable revision and validates required files, sizes, and checksums when available.
+6. It publishes the final directory or manifest atomically.
+7. It writes `ASSETS_READY` last.
+8. Workers verify the same manifest and then load only from explicit paths.
 
 For Hugging Face assets, a blob may exist while the snapshot is incomplete, but the inverse mistake is also dangerous: a complete model in a project checkpoint directory must not be treated as absent merely because no Hugging Face snapshot pointer or new manifest exists. Verify the actual directory passed to `from_pretrained`. Once prepared, set offline mode before Python imports and pass `local_files_only=True`. Formal training must fail immediately if an asset is missing instead of entering a network/cache lock path.
 
@@ -182,6 +185,17 @@ or service. Verify the child process's interpreter, launcher, import roots, and
 loaded communication library against a small allowlisted fingerprint; never
 record credentials. A parent-shell check does not prove what tmux, a container,
 or a relay actually inherited.
+
+Declare one user/cluster environment bootstrap path in the launch contract
+(for example, a site-provided shell setup file). Source it explicitly inside
+every independent asset-preparation, download, tmux, scheduler, dispatcher,
+probe, service, evaluator, and trainer child shell before environment checks or
+network access. Do not assume an SSH parent, interactive Agent, or login shell
+exported proxy, authentication, Conda, CUDA, or vendor communication settings
+to a later child. Validate required secret-bearing variables by presence only,
+redact command tracing, and never serialize their values into logs, manifests,
+prompts, or the shared Agent bus. Source first, then remove training rendezvous
+state from children such as reward services that must not inherit it.
 
 Process-group ownership needs a handshake. `setsid command &` followed by one
 immediate `ps` is racy: `setsid` may fork, or the parent may inspect the child
@@ -297,6 +311,8 @@ A send-and-forget prompt must give the remote agent:
 - exact host identity and role;
 - repository, branch, exact commit, clean-checkout requirement, and config/experiment IDs;
 - complete topology and rendezvous values;
+- the exact user/cluster environment bootstrap that every independent child
+  shell must source, including asset download and final tmux/scheduler shells;
 - asset ownership: coordinator prepares, worker verifies, no fallback network download;
 - bounded preflight, application readiness, and first-work gates;
 - process-group ownership and cleanup hooks;
