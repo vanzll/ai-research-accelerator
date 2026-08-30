@@ -1,6 +1,6 @@
 {
   "name": "ai-research-accelerator",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "An author-first workflow for accelerating research from reliable distributed training through top-conference publication.",
   "author": {
     "name": "vanzll",
@@ -18,13 +18,14 @@
     "distributed-training",
     "long-running-tasks",
     "continuous-learning",
+    "multi-agent-development",
     "visualization"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "AI Research Accelerator",
     "shortDescription": "AI for accelerating research end to end.",
-    "longDescription": "Coordinate research agents, design reliable multi-node training, distill verified task lessons into reusable skills, monitor long tasks without continuous polling, plan formal experiments, analyze and plot results, write insight-driven papers, and process author review through a reproducible workflow.",
+    "longDescription": "Build substantial features through independent implementation and review agents, coordinate research agents, design reliable multi-node training, distill verified task lessons into reusable skills, monitor long tasks without continuous polling, plan formal experiments, analyze and plot results, write insight-driven papers, and process author review through a reproducible workflow.",
     "developerName": "vanzll",
     "category": "Productivity",
     "capabilities": [
@@ -34,6 +35,7 @@
     ],
     "websiteURL": "https://github.com/vanzll/ai-research-accelerator",
     "defaultPrompt": [
+      "Build this substantial feature from a frozen contract using fresh implementation and review agents.",
       "Shape my evidence into an insightful paper story.",
       "Process author feedback on this paper PR.",
       "Audit my paper experiments and figures.",

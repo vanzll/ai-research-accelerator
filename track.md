@@ -1,5 +1,23 @@
 # Development Track
 
+## 2026-08-30: Add contract-driven fresh-context feature development
+
+- Added `contract-driven-feature-development` for substantial new algorithms,
+  cross-module work, shared core paths, and other regression-sensitive changes.
+- The main thread freezes a concise contract and integrates the result. A fresh
+  implementation Agent works in an isolated worktree, while a different fresh
+  reviewer receives the contract, diff, references, and tests without the
+  implementer's reasoning or desired verdict.
+- The workflow is deliberately risk-routed: small local edits bypass it, broad
+  archaeology is not a default phase, and only hardware/distributed behavior
+  that cannot be validated locally requires one real smoke.
+- The rule was distilled after a shared video-training compatibility patch
+  encoded an invalid SP follower assumption and a source-string test locked in
+  that behavior. The skill therefore requires behavior-level regressions and
+  explicit isolation of existing behavior behind default-off feature switches.
+- Raised the dual Codex/Claude plugin version to `0.8.0` and added the new skill
+  plus `continuous-skill-learning` to repository validation.
+
 ## 2026-08-21: Initial dual-agent plugin
 
 - Initial repository/plugin name: `ai-for-academic-writing`; renamed to `ai-research-accelerator` before wider use.
