@@ -171,6 +171,12 @@ starting the new trainer.
   wave counts; score and retain only the unique, ordered examples.
 - Do not trade throughput for serialized algorithm equivalence unless the user explicitly asks to reproduce a larger logical batch or topology with fewer resources. Otherwise preserve the fastest correct parallel execution supported by the frozen protocol.
 - Persist rank-prefixed runtime output from the first process launch. Use tensor collectives for transport measurements and structured per-rank records for diagnostics; do not use Python object collectives or interleaved multi-rank stdout as a bandwidth oracle.
+- Keep Python object metadata off NCCL-capable process groups when its
+  serialization or device staging can create material GPU allocations. Reuse a
+  group only when its backend is explicitly dedicated Gloo; ambiguous,
+  wrapper-reported, mixed, or NCCL-capable groups require a separately created
+  and cached Gloo group with the exact same members. Use tensor collectives for
+  large numeric payloads.
 - Treat process enumeration as racy: a PID may exit between discovery and
   `/proc` inspection. `ESRCH` is an idempotent teardown no-op, but preserve any
   evidence of an unexpected prior exit and verify that the complete owned

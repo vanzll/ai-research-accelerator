@@ -88,6 +88,11 @@ constructing a production relay or a remote-agent prompt.
   not an infinite token-consuming retry loop.
 - Send only the event reason, progress, compact evidence, identities, and paths.
   Never paste an entire log or W&B history into the wake prompt.
+- Prefer structured progress/health JSON and monotonic milestone counters over
+  raw progress-bar tails. Fatal patterns must identify failure semantics, not
+  merely metric-key substrings: parse values such as a nonfinite count and
+  include the matching evidence before waking or stopping work. Keep hard
+  exception patterns separate from healthy diagnostic metric names.
 - Treat state files as trusted executable configuration. In particular,
   `command` delivery may execute the configured argv without a shell.
 - A watcher observes and notifies. Automatic restart or mutation belongs in a

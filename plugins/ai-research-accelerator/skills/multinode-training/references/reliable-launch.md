@@ -129,9 +129,14 @@ Never equate one cache implementation with model identity. A project-local check
 2. Inside the final asset-preparation child shell, it sources the declared
    user/cluster environment bootstrap and verifies required proxy,
    authentication, and toolchain variables without logging their values.
+   Before a large transfer, run a bounded no-secret connectivity probe in this
+   same child context; a successful interactive parent probe is insufficient.
 3. It performs the discovery-and-import protocol above.
 4. If network transfer is still required, it downloads to a temporary directory that is not a valid model path.
 5. It pins an immutable revision and validates required files, sizes, and checksums when available.
+   For sharded tensor formats, also parse the weight index and each shard's
+   format metadata/header before publication so a truncated or malformed file
+   cannot pass a pathname/size-only gate.
 6. It publishes the final directory or manifest atomically.
 7. It writes `ASSETS_READY` last.
 8. Workers verify the same manifest and then load only from explicit paths.

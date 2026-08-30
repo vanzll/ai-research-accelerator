@@ -88,6 +88,14 @@ If RDMA is selected but identical probes alternate between fast and extremely sl
 
 Use tensor collectives and one atomic result record per rank or pair for bandwidth diagnosis. Python object collectives add serialization and are not a bandwidth oracle; concurrent multi-rank stdout can interleave and corrupt parsers even when the collective itself is healthy.
 
+For small Python metadata or indexed reward records, inspect the exact process
+group backend before calling an object collective. A group is reusable only
+when it is explicitly dedicated Gloo. Treat `undefined`, mixed, wrapper, or
+NCCL-capable reports as unsafe for object staging and create/cache a dedicated
+Gloo group with identical membership. If the payload is mostly numeric or
+large, encode it as tensors instead. Unit-test backend-report variants and
+group membership without allocating formal-model GPUs.
+
 ## Stage 5: correctness mismatch
 
 Symptoms:
@@ -185,3 +193,12 @@ A useful report states:
 Do not describe a timeout as the root cause when the actual cause is an incomplete asset, missing node, asymmetric collective, or dead service.
 
 Also distinguish training failure from control-plane failure. A healthy run can be falsely rejected by a broken attempt parser, duplicated validator, tracker query, log parser, or liveness race. Before changing model code, reconstruct the timeline from immutable optimizer-step records, rank-local logs, terminal statuses, and tracker history.
+
+Use low-noise structured observations for long validation and rollout phases:
+log mtime/line-count deltas, completed group/sample/update counters, immutable
+milestones, and parsed health metric values. Raw progress-bar tails are a
+diagnostic fallback, not the default monitor. Never classify a run as nonfinite
+because the string `nonfinite` appears in a healthy metric key; parse the
+numeric count/value and show the matching evidence before acting. Keep hard
+error patterns such as traceback, OOM, and explicit exception lines separate
+from health metrics.

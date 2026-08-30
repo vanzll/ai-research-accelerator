@@ -451,3 +451,25 @@
 - Added the required regression ordering: A acquires, B supersedes, A exits
   late without restoring idle state, then B exits and restores it exactly once;
   duplicate signals and dead recorded owners are also covered conceptually.
+
+## 2026-08-30 - Distill the accepted Distilled32 A15 retrospective
+
+- Read the complete campaign retrospective covering avoidable A3--A15 time
+  sinks and retained project-specific history in the campaign record rather
+  than copying it into general skills.
+- Existing skills already covered generation-fenced GPU leases, explicit child
+  environment sourcing, hard attempt terminals/cleanup, immutable retry
+  lineage, campaign host identity, and first-work acceptance evidence.
+- Added missing reusable rules: Python object metadata uses only an explicitly
+  dedicated Gloo group (ambiguous/mixed/NCCL-capable groups are unsafe), while
+  large numeric payloads use tensor collectives; backend-report variants need
+  CPU-focused tests.
+- Added a diffusion conditioning-shape contract: classic CFG may save paired
+  unconditional/conditional rows, whereas distilled guidance-one paths may be
+  conditional-only; update adapters reject mixed/unexpected optimizer-window
+  row layouts without synthesizing unused branches.
+- Tightened asset staging with a same-child-context no-secret connectivity
+  probe plus index/shard metadata parsing before atomic publication.
+- Tightened long-run monitoring to structured counters and parsed health values;
+  raw progress bars are fallback evidence and a healthy metric key containing
+  `nonfinite` must never be treated as an error without evaluating its value.

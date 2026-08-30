@@ -165,6 +165,15 @@ CFG can double the effective model batch. Randomly selecting fewer timesteps or
 using a distilled single branch changes compute and must be frozen as algorithm
 protocol, not introduced as an unreported infra optimization.
 
+Freeze the conditioning row layout with that branch contract and test the
+actual saved/replayed tensor shapes. Classic CFG commonly carries paired
+unconditional and conditional rows for each sample; a CFG-distilled
+`guidance_scale=1` path may carry conditional rows only. Replay/update adapters
+must accept the declared layout, preserve its sample ownership, and reject
+mixed or unexpected row counts within one optimizer window. Do not make a
+distilled entrypoint synthesize unused unconditional rows merely to satisfy an
+assumption inherited from classic CFG.
+
 Distinguish two sequential optimizer windows over disjoint sample groups from
 replaying the same trajectories twice. Both produce two optimizer steps, but
 only the latter repeats sample work. Verify row ownership, model-call counts,
