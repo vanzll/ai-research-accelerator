@@ -32,6 +32,13 @@ mistakes without a reusable decision rule do not need a skill update.
 
 ## 3. Select the action
 
+First require direct topic ownership. A candidate target skill qualifies only
+if a future Agent would load it to make the failed decision and its documented
+capability directly contains that workflow. Reject a target chosen merely
+because the incident mentioned its tools, logs, processes, or an adjacent
+concept. One incident should update one owning skill by default; multiple skill
+updates require separate causal evidence for each.
+
 - **Delete:** the existing rule is false, obsolete, duplicated, or harmful.
 - **Replace:** the rule points in the right area but its invariant or boundary
   is wrong.

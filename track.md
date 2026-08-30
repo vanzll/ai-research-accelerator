@@ -473,3 +473,16 @@
 - Tightened long-run monitoring to structured counters and parsed health values;
   raw progress bars are fallback evidence and a healthy metric key containing
   `nonfinite` must never be treated as an error without evaluating its value.
+
+## 2026-08-30 - Correct continuous-learning topic scope
+
+- User feedback identified scope creep: the Distilled32 retrospective directly
+  belonged to multinode training, but one monitoring lesson was also appended
+  to `long-task-relay` based only on adjacent relevance.
+- Removed that unrelated cross-skill edit. The multinode diagnostic rule stays
+  with the owning workflow.
+- Added a strict topic-ownership gate to continuous learning: a target skill's
+  core capability must directly own the failed decision and primary evidence
+  must show its guidance or implementation contributed. One incident updates
+  one owning skill by default; incidental co-occurrence or possible usefulness
+  cannot justify modifying neighboring skills.

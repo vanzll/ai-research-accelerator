@@ -41,6 +41,15 @@ primary evidence and current authoritative documentation where relevant.
 
 Search the available skills and their canonical sources before editing.
 
+Apply a strict topic-ownership gate before selecting a target skill. Its core
+capability and trigger must directly own the failed decision or workflow; the
+incident must expose a defect in that skill's guidance or implementation.
+Incidental co-occurrence, broad technical relevance, or a lesson that could be
+useful to readers of an adjacent skill is insufficient. Do not update several
+skills from one incident unless primary evidence shows that each skill
+independently contributed a wrong or missing decision. Otherwise keep the
+lesson in the project record or update only the directly responsible skill.
+
 1. **Delete or replace incorrect guidance.** Do not append a contradictory
    exception while leaving a false rule active.
 2. **Update the narrowest existing skill.** Put the invariant where an Agent
