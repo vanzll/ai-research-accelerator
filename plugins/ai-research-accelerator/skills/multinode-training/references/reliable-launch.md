@@ -97,6 +97,21 @@ reachability probe. `git cat-file -e` proves only that one object database
 contains an object. Equivalent non-Git flows should verify their own immutable
 digest and extraction/import path instead of being forced through Git.
 
+If frozen source is assembled through one or more compatibility patches,
+generate those patches from actual before/after checkout states rather than
+hand-writing nested hunks. Apply the full chain once to a clean pinned checkout,
+exercise the repaired runtime path, and compute the identity from the resulting
+tracked diff or tree. Keep one temporary checkout while iterating instead of
+recreating it for each hunk. Search for every consumer of that identity and
+update its expected value in the same change, including preparation scripts,
+launch validators, and runtime import guards.
+
+A detached checkout has no current local branch to push implicitly. Publish an
+authorized repair with an explicit source ref such as `HEAD:<target-branch>`,
+then verify that the remote branch resolves to the intended commit before any
+worker stages it. A successful push command that names only a local branch does
+not prove that the detached training commit was published.
+
 Keep one pinned preflight implementation and a versioned result schema in Git.
 Agents run it and interpret its result; do not ask every worker to construct a
 new parser in its prompt. Validators read attempt and fencing values from the

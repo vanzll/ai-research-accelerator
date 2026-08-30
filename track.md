@@ -1,5 +1,21 @@
 # Development Track
 
+## 2026-08-31: Harden pinned patch publication
+
+- Extended `multinode-training` after a successful four-node recovery exposed
+  two remaining dependency-contract gaps: a generated external patch was
+  validated by its preparer but rejected by a stale runtime hash guard, and a
+  detached checkout could publish a different local branch than its current
+  training commit.
+- Compatibility patches are now treated as executable build artifacts: produce
+  them from real checkout states, validate the fully applied result, and update
+  every identity consumer together. Detached publication must use an explicit
+  source ref and verify the remote commit before worker staging.
+- Existing guidance already covered the other retrospective findings, including
+  Gloo for Python object collectives, fenced GPU leases, final-shell environment
+  activation, fixed result schemas, low-noise failure parsing, persistent
+  dispatchers, and deterministic monitoring, so those rules were not duplicated.
+
 ## 2026-08-30: Add contract-driven fresh-context feature development
 
 - Added `contract-driven-feature-development` for substantial new algorithms,

@@ -158,6 +158,12 @@ starting the new trainer.
   is insufficient; for containers, bundles, shared worktrees, or copied trees,
   verify the corresponding immutable artifact and the wrapper's actual import
   path.
+- Treat layered compatibility patches as executable build artifacts. Generate
+  them from real pinned checkout states, apply the complete chain to a clean
+  checkout, test the resulting behavior, and hash the final applied tree or
+  diff. When that identity changes, update and test every launcher, preparer,
+  and runtime guard that consumes it; validating only the patch producer is
+  insufficient.
 - Implement experiment-ID parsing, contract validation, and identity derivation once and test multi-digit attempts. Duplicated outer/inner validators create contradictory control planes.
 - Treat a missing manifest as "not yet verified," not "asset missing." Before any download, discover declared existing asset roots, validate compatible files against the pinned revision/index/checksums, and import or link them into the immutable layout. Download only files that are absent or invalid.
 - Record both the logical parallel mesh and its physical placement. Full-world FSDP can turn a transport mistake into per-layer cross-node stalls; compare it with node-local sharding plus cross-node replication only after transport correctness is established.
