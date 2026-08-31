@@ -533,3 +533,17 @@
 - The workflow detects an authoritative active GitHub paper PR before editing
   so Overleaf and Git do not silently diverge, and it leaves the final compiled
   page visible for author review.
+
+## 2026-08-31 - Add Overleaf polish mode
+
+- Added a Reviewing-mode workflow for author-written tracked changes. Codex can
+  refine English or translate Chinese drafts into concise academic English while
+  preserving claims, notation, citations, and paragraph intent.
+- Polish mode creates a `before polishing` label before touching tracked changes,
+  accepts only the reviewed target scope, recompiles and visually checks the
+  affected pages, then creates a `polish and accept` final label.
+- Project-wide `Accept all` is prohibited when unrelated collaborator changes
+  may exist. Ambiguous scientific or mathematical changes remain unaccepted for
+  author clarification.
+- Git synchronization stays paused while tracked changes are active because a
+  Git push can lose or displace Overleaf revisions and comments.

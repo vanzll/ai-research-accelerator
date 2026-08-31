@@ -1,4 +1,4 @@
 interface:
   display_name: "Edit Overleaf with Edge"
   short_description: "Edit and visually verify Overleaf papers in Edge"
-  default_prompt: "Edit my open Overleaf project through Edge, compile and visually verify the result, then label the completed version."
+  default_prompt: "Edit or polish my open Overleaf project through Edge. Preserve tracked author changes with a before label, translate Chinese or refine English when requested, accept only the reviewed scope, compile and visually verify the PDF, then label the final version."
