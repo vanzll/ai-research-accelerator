@@ -520,3 +520,16 @@
   must show its guidance or implementation contributed. One incident updates
   one owning skill by default; incidental co-occurrence or possible usefulness
   cannot justify modifying neighboring skills.
+
+## 2026-08-31 - Add labeled Edge-to-Overleaf editing
+
+- Added `edit-overleaf-with-edge` for direct editing of a signed-in Overleaf
+  project through the user's Edge extension.
+- Every completed logical edit batch now requires an Overleaf History label in
+  the form `Codex YYYY-MM-DD HH:MM TZ | summary` after a successful explicit
+  compile. Transient visual iterations share the final batch label.
+- Figure, table, equation, and page-layout edits require inspection of the
+  latest right-hand PDF preview and iterative correction before labeling.
+- The workflow detects an authoritative active GitHub paper PR before editing
+  so Overleaf and Git do not silently diverge, and it leaves the final compiled
+  page visible for author review.

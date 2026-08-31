@@ -1,6 +1,6 @@
 # AI Research Accelerator
 
-**AI for Accelerating Research.** An author-first plugin for Codex and Claude Code that covers the research workflow from distributed training to publication. It packages nine primary skills:
+**AI for Accelerating Research.** An author-first plugin for Codex and Claude Code that covers the research workflow from distributed training to publication. It packages ten primary skills:
 
 - `contract-driven-feature-development`: deliver substantial features through a concise contract, a fresh implementation Agent, and an independent fresh reviewer;
 - `multinode-training`: design, launch, validate, and debug reliable multi-node GPU training;
@@ -10,6 +10,7 @@
 - `github-paper-review-workflow`: revise Chinese semantic Markdown and formal English LaTeX through GitHub PR review;
 - `manage-paper-experiments`: maintain the paper-wide experiment ledger and reproducible execution queues;
 - `plot-paper-experiments`: produce traceable publication figures from experiment data;
+- `edit-overleaf-with-edge`: edit live Overleaf papers through Edge, compile and visually inspect the PDF, and label every completed modification;
 - `continuous-skill-learning`: distill verified failures and corrections into concise reusable skills.
 
 The contract-driven development workflow keeps the main thread responsible for

@@ -1,6 +1,6 @@
 {
   "name": "ai-research-accelerator",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "An author-first workflow for accelerating research from reliable distributed training through top-conference publication.",
   "author": {
     "name": "vanzll",
@@ -19,13 +19,14 @@
     "long-running-tasks",
     "continuous-learning",
     "multi-agent-development",
-    "visualization"
+    "visualization",
+    "overleaf"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "AI Research Accelerator",
     "shortDescription": "AI for accelerating research end to end.",
-    "longDescription": "Build substantial features through independent implementation and review agents, coordinate research agents, design reliable multi-node training, distill verified task lessons into reusable skills, monitor long tasks without continuous polling, plan formal experiments, analyze and plot results, write insight-driven papers, and process author review through a reproducible workflow.",
+    "longDescription": "Build substantial features through independent implementation and review agents, coordinate research agents, design reliable multi-node training, distill verified task lessons into reusable skills, monitor long tasks without continuous polling, plan formal experiments, analyze and plot results, write insight-driven papers, edit and visually verify Overleaf projects through Edge, and process author review through a reproducible workflow.",
     "developerName": "vanzll",
     "category": "Productivity",
     "capabilities": [
@@ -39,6 +40,7 @@
       "Shape my evidence into an insightful paper story.",
       "Process author feedback on this paper PR.",
       "Audit my paper experiments and figures.",
+      "Edit my open Overleaf paper in Edge, compile it, inspect the PDF, and label the completed version.",
       "Coordinate these agents through a shared-filesystem message bus.",
       "Design or debug this multi-node training run.",
       "Distill verified failures and corrections into concise reusable skills.",

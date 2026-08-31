@@ -15,6 +15,7 @@ PLUGIN = ROOT / "plugins" / "ai-research-accelerator"
 REQUIRED_SKILLS = {
     "contract-driven-feature-development",
     "continuous-skill-learning",
+    "edit-overleaf-with-edge",
     "github-paper-review-workflow",
     "long-task-relay",
     "manage-paper-experiments",

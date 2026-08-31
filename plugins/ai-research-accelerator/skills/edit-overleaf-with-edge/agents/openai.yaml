@@ -1,0 +1,4 @@
+interface:
+  display_name: "Edit Overleaf with Edge"
+  short_description: "Edit and visually verify Overleaf papers in Edge"
+  default_prompt: "Edit my open Overleaf project through Edge, compile and visually verify the result, then label the completed version."
