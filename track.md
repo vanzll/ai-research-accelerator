@@ -561,3 +561,40 @@
 - The workflow never accepts unrelated collaborator changes, uses global
   `Accept all`, deletes comments, or treats a document comment as permission for
   unrelated browser actions.
+
+## 2026-08-31 - Time-box ordinary Overleaf review processing
+
+- Author feedback showed that the safe review workflow could become inefficient
+  through repeated skill reads, duplicate UI expansion, local-Git rescans, and
+  unchanged-state polling after the full review batch was already known.
+- Added a fast path for small text-focused batches: one inventory/source
+  capture, one classification pass, one coherent edit batch, and one compile
+  plus affected-page inspection, targeting roughly ten minutes.
+- The workflow now stops rediscovery once sufficient live source is available
+  and falls back from an incomplete Review-panel diff to the corresponding live
+  source range after one reasonable attempt. History checkpoints, scoped
+  acceptance, and comment-resolution safeguards remain mandatory.
+
+## 2026-08-31 - Close review-inventory and local-edit gaps
+
+- A review pass took about 31 minutes because the initial inventory treated the
+  visible cards as complete, discovered two items only after expanding `More
+  comments`, replaced the full manuscript for two local cross-references, and
+  retried review actions after Overleaf had invalidated their node identifiers.
+- The fast path now requires exhausting `More comments` before editing, prefers
+  targeted replacements for local corrections, and reacquires review cards once
+  after each destructive action instead of retrying stale identifiers.
+
+## 2026-08-31 - Refactor Overleaf editing into a batch-first workflow
+
+- Replaced the accumulated review instructions with one staged workflow:
+  complete inventory, one rollback label, one coherent edit batch, one compile
+  and affected-page check, one browser-side comment-resolution loop, and one
+  final label.
+- Established a single-writer rule for the live Overleaf project. Large reviews
+  may parallelize analysis over frozen, disjoint source snapshots, but only the
+  coordinator may edit, compile, resolve comments, or label History.
+- Added explicit 5--10 minute expectations for ordinary single-file text
+  reviews, prohibited full-manuscript replacement for local fixes, and required
+  comment-node reacquisition inside one browser tool call rather than through
+  repeated model round trips.
