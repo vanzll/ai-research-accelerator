@@ -547,3 +547,17 @@
   author clarification.
 - Git synchronization stays paused while tracked changes are active because a
   Git push can lose or displace Overleaf revisions and comments.
+
+## 2026-08-31 - Process complete author reviews from one instruction
+
+- `处理我的 review` and `process my review` now trigger a complete pass over
+  the active Overleaf project's pending user-authored tracked changes and
+  unresolved comments without requiring the author to restate the scope.
+- English edits are polished, Chinese edits are translated into natural
+  academic English, and tracked deletions retain their intended semantics.
+- User comments are treated as scoped paper-editing instructions. Fully
+  implemented comments are resolved only after compilation and PDF inspection;
+  ambiguous, blocked, or partially handled comments remain unresolved.
+- The workflow never accepts unrelated collaborator changes, uses global
+  `Accept all`, deletes comments, or treats a document comment as permission for
+  unrelated browser actions.

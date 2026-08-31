@@ -1,6 +1,6 @@
 {
   "name": "ai-research-accelerator",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "An author-first workflow for accelerating research from reliable distributed training through top-conference publication.",
   "author": {
     "name": "vanzll",
@@ -41,7 +41,7 @@
       "Process author feedback on this paper PR.",
       "Audit my paper experiments and figures.",
       "Edit my open Overleaf paper in Edge, compile it, inspect the PDF, and label the completed version.",
-      "Polish my tracked Overleaf revisions, translate Chinese drafts into academic English, accept the reviewed changes, and preserve before and after labels.",
+      "Process my Overleaf review: polish or translate tracked edits, implement unresolved comments, accept completed changes, and preserve before and after labels.",
       "Coordinate these agents through a shared-filesystem message bus.",
       "Design or debug this multi-node training run.",
       "Distill verified failures and corrections into concise reusable skills.",
