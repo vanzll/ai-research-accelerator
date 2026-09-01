@@ -72,6 +72,13 @@ retry is not rejected by a stale hard-coded validator.
 
 ## AI-assisted repair and node collaboration
 
+Before introducing an Agent bus, run a bounded authenticated remote-execution
+probe from the coordinator to every worker. If the coordinator can execute the
+frozen node-local commands through SSH, a scheduler, or another approved remote
+executor, prefer one coordinator plus deterministic worker supervisors. Use a
+multi-Agent bus only when workers need independent Agent judgment or no direct
+executor is available.
+
 Load `shared-filesystem-agent-coordination` before designing remote-Agent
 prompts, a shared-file message bus, or an autonomous repair loop. It owns the
 general coordinator/worker topology, first-mile bootstrap, request/ACK/result

@@ -10,6 +10,17 @@ On shared storage, the coordinator is the only writer for shared code bundles, m
 
 The coordinator is not allowed to report startup success until every expected node has passed the same stage. This role need not be a complex service: on a fixed two-node run, an atomic shared contract plus one launcher per node is often sufficient.
 
+Before adding a cross-node Agent control plane, test whether the coordinator
+already has bounded authenticated command execution to every worker. Treat the
+connection endpoint and the remote host identity as separate facts: one
+platform-approved endpoint may be an IP address, scheduler address, SSH alias,
+or FQDN, and a failed optional alias does not invalidate a successful endpoint.
+Accept the route only when the remote command returns the expected hostname and
+user, then freeze that working endpoint per worker. Do not require every alias
+form to authenticate, and do not infer identity from the connection string
+alone. When this direct route exists and worker actions are deterministic, use
+one coordinator with node-local supervisors instead of an Agent bus.
+
 ## AI-agent collaboration over shared storage
 
 Use the `shared-filesystem-agent-coordination` skill for the general Agent Bus,

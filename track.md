@@ -598,3 +598,17 @@
   reviews, prohibited full-manuscript replacement for local fixes, and required
   comment-node reacquisition inside one browser tool call rather than through
   repeated model round trips.
+
+## 2026-09-01 - Prefer direct coordinator execution before an Agent bus
+
+- A four-node allocation probe showed that the coordinator could execute
+  bounded SSH commands on every worker through their private IP addresses and
+  verify the expected remote hostname/user, while the equivalent FQDN forms
+  failed authentication. Requiring every alias to succeed incorrectly marked a
+  usable control path as failed.
+- Multinode guidance now separates connection endpoints from remote identity,
+  accepts one platform-approved endpoint after command-level host/user
+  attestation, freezes that endpoint per worker, and defaults to one coordinator
+  plus deterministic worker supervisors when direct execution is available.
+  A shared Agent bus remains appropriate only for independent worker judgment
+  or when no direct executor exists.
