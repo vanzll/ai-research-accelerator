@@ -270,8 +270,11 @@ original leader PID. `kill -0 <leader>` can succeed for a zombie, while a dead
 leader can leave live descendants in the same group. Trap `HUP` as well as
 `INT`/`TERM`, signal the complete group, wait for non-zombie members to drain,
 escalate after a bounded timeout, and only then release the GPU lease or restore
-an idle GPU holder. Exercise normal exit, signals, zombie leaders, and orphaned
-descendants in a real Linux process-lifecycle test.
+an idle GPU holder. Persist the active PGID in the generation-fenced lease; a
+dead supervisor with live group members must quarantine the lease and block a
+new attempt until verified drain. Exercise normal exit, signals, zombie
+leaders, orphaned descendants, and cross-attempt acquisition in a real Linux
+process-lifecycle test.
 
 Each node supervisor should consume nonce-bound terminal failure records and
 terminate only this attempt's local process group. Treat one missed heartbeat
