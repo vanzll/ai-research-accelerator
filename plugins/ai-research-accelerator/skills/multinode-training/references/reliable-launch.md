@@ -265,6 +265,14 @@ PID/PGID after setup, or poll the intended invariant with a short bounded
 timeout while also checking child liveness. Do not release GPUs or report
 readiness until ownership is established.
 
+Teardown must use the owned process group as the authority, not only its
+original leader PID. `kill -0 <leader>` can succeed for a zombie, while a dead
+leader can leave live descendants in the same group. Trap `HUP` as well as
+`INT`/`TERM`, signal the complete group, wait for non-zombie members to drain,
+escalate after a bounded timeout, and only then release the GPU lease or restore
+an idle GPU holder. Exercise normal exit, signals, zombie leaders, and orphaned
+descendants in a real Linux process-lifecycle test.
+
 Each node supervisor should consume nonce-bound terminal failure records and
 terminate only this attempt's local process group. Treat one missed heartbeat
 or failed query as `SUSPECT`; require bounded repeated failure or an explicit
@@ -296,6 +304,14 @@ Report payload or algorithmic bandwidth separately from NCCL bus bandwidth;
 their conversion depends on collective and world size. Run the probe in an
 owned process group so cancellation, timeout, or peer failure cannot leave
 workers holding GPUs or rendezvous ports.
+
+A generic world collective is insufficient when the trainer constructs
+additional process groups. The formal probe must reproduce the trainer's
+process-group initialization options, backend mapping, device binding,
+DeviceMesh/group creation order, and first high-risk collective shape. After
+the trainer initializes its real communicators, attest the mapped library,
+loaded network plugin, selected transport, and the exact HCA-and-port set again;
+pre-init environment validation alone cannot prove the runtime path.
 
 Use separate no-progress and absolute deadlines. Refresh progress only from
 meaningful evidence such as completed phases, new rank joins, or structured
