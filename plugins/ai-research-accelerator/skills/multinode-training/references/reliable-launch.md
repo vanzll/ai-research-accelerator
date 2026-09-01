@@ -202,6 +202,36 @@ rendezvous environment.
 
 Port listening alone is insufficient if the service can accept TCP before model loading finishes. A process alone is insufficient if it is blocked on a model cache lock.
 
+## Launcher adapter contract
+
+Keep three layers separate:
+
+1. the scientific command and distributed topology;
+2. one backend-neutral node wrapper that launches the node's local workers in
+   the foreground;
+3. a thin allocation adapter such as MPI, Slurm, SSH, or a platform operator.
+
+The adapter must provide the node wrapper with the same explicit node rank,
+node count, local process count, master endpoint, attempt identity, and frozen
+command regardless of backend. Select an adapter explicitly. Hostfiles and
+site integration are adapter inputs, not requirements of the generic runner.
+
+Before adopting a scheduler-native adapter, run a bounded no-GPU map probe and
+verify the exact host set, unique global ranks, expected per-host slots/local
+ranks, and command execution without undeclared hosts. For an MPI outer layer,
+prefer one foreground MPI process per node followed by the existing local
+`torchrun`; disable accidental CPU binding unless a measured binding policy was
+frozen. Capture the MPI node rank before sanitizing MPI/PMI variables from the
+training child, propagate only required non-secret environment, and keep the
+outer launcher in the durable master supervisor so nonzero child exits remain
+visible for gang cleanup. A node wrapper that detaches its trainer and exits
+early breaks this ownership model.
+
+An MPI adapter may accept an optional hostfile, but scheduler-integrated MPI
+must also work without one when the allocation probe proves that behavior. Do
+not default to one MPI process per GPU until direct MPI-to-training rank,
+signal, FSDP, and application environment semantics have been tested.
+
 ## Rendezvous and launch
 
 - Resolve the master through the cluster's private network.

@@ -614,3 +614,17 @@
   Agent, and shared storage carries evidence rather than Agent messages. A
   shared Agent bus remains appropriate only for independent worker judgment or
   when no direct executor exists.
+
+## 2026-09-01 - Add replaceable allocation launcher backends
+
+- Multinode launch guidance now separates scientific commands, a generic
+  foreground node wrapper, and thin allocation adapters such as MPI, Slurm,
+  direct SSH, or a platform operator. Backend selection is explicit and
+  hostfiles/site variables remain adapter inputs rather than generic runner
+  requirements.
+- A verified scheduler-native launcher is preferred over direct SSH, with an
+  Agent bus last. MPI must first pass a no-GPU allocation/rank probe; its initial
+  integration uses one unbound foreground wrapper per node and the existing
+  local torchrun, keeping the outer launcher in the master supervisor for exit
+  propagation and gang cleanup. A user-requested launch prompt therefore goes
+  only to the master/Node 0 Goal Agent.

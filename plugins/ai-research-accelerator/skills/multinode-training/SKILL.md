@@ -70,6 +70,30 @@ scripts; they do not each improvise a parser for the same evidence. Keep
 immutable science fields separate from dynamic attempt/fencing state so a valid
 retry is not rejected by a stale hard-coded validator.
 
+## Keep cluster launch backends replaceable
+
+Separate the backend-neutral node runner from allocation launch adapters. The
+node runner consumes an explicit node rank, node count, local GPU count, master
+address/port, and frozen training command. Thin adapters translate platform
+state into that contract, for example MPI, Slurm, direct SSH, or a Kubernetes
+operator. Do not put hostfiles, scheduler variables, site paths, or hard-coded
+hosts into the scientific launcher.
+
+Prefer an allocation-native launcher after a bounded no-GPU allocation probe
+proves the expected hosts, slots, rank mapping, and remote execution. On an MPI
+allocation, start one foreground wrapper per node and let each wrapper start the
+existing local `torchrun`; use no CPU binding unless a validated policy is
+explicitly configured. Keep hostfiles optional because scheduler-integrated MPI
+may already know the allocation. Do not make direct `mpirun -np <world> python`
+the default until rank/environment/signal behavior has separate evidence.
+
+Select the backend explicitly; do not guess from whichever executable happens
+to be installed. Priority is: verified allocation-native launcher, authenticated
+coordinator-to-worker execution, then an Agent bus. When the user requests a
+remote launch prompt, provide one self-contained master/Node 0 Goal prompt that
+runs the frozen adapter and continues through first-work validation. Worker
+Agents are unnecessary for deterministic node wrappers.
+
 ## AI-assisted repair and node collaboration
 
 Before introducing an Agent bus, run a bounded authenticated remote-execution
