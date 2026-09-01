@@ -168,6 +168,8 @@ starting the new trainer.
 - Treat the loaded communication binary as part of the contract. Two libraries may report the same NCCL ABI/version while selecting radically different vendor transports. On clusters with a site NCCL/KCCL build, verify the resolved `libnccl.so` path, preload the pinned vendor library when required, and record its checksum; HCA/QP/GID tuning cannot repair the wrong implementation.
 - Treat interface, HCA, GID, and NUMA selectors as allocation-local facts. Before rendering a launcher, collect the actual GPU/fabric topology on every host and mechanically verify every selected device exists, is active, and maps to the intended network path. A validated communication-library path may be reusable; HCA names from another host or allocation are not. Never make all workers satisfy the coordinator's device names merely because the machines appear similar.
 - Prefer a one-shot adaptive fabric preflight for reusable launchers on new allocations: every node discovers its local topology, one coordinator atomically freezes an allocation contract, every worker validates its own contract slice, and a short exact-world collective verifies the selected transport before the same invocation directly enters formal training. Keep manual topology probes as a diagnostic fallback, not a routine user prerequisite. Select communication libraries only from an explicit platform allowlist; discovery must never preload an arbitrary library merely because it exists.
+- A transport probe must exercise every performance-critical formal process-group shape with its actual collective class and representative tensor size. In particular, a default-world all-reduce does not validate an FSDP shard-group all-gather, an SP all-to-all, or multiple concurrently initialized communicators. Record per-rank completion and fail if even one expected rank is absent; do not accept aggregate throughput from a different group as proof that formal training can communicate.
+- Validate the communication implementation actually mapped in every probe/trainer process, not merely an `LD_PRELOAD` or contract path. Compare `/proc/self/maps` (or the platform equivalent), path, checksum, plugin policy, and successful transport logs; reject Socket fallback, failed-RDMA messages, unexpected plugins, and environment claims that disagree with the loaded binary.
 - Freeze the discovered communication library path and checksum, socket interface, port-qualified HCA list, GID, probe parameters, and host order. Source that same per-node contract into the formal trainer and test that no legacy rank policy rewrites it after the probe; a fast preflight is meaningless if formal training silently uses different rails or a different NCCL binary.
 - Activate and verify the exact Python/launcher/import paths inside the final
   persistent child shell. A parent-shell import or Conda activation does not
@@ -182,13 +184,17 @@ starting the new trainer.
   credentials in shared state, or rely on a parent Agent shell having sourced
   them. After sourcing, sanitize role-inappropriate variables at the child
   boundary as required above.
+- When a child consumes a generated shell contract such as `runtime.env`, source it with explicit export semantics (`set -a` or an equivalent structured launcher API) and test inheritance in the final process. Shell variables visible to the wrapper are not automatically environment variables visible to `torchrun`. If the site bootstrap is not nounset-safe, source it before enabling `set -u`, then enable strict mode for the owned launcher.
 - Establish an owned worker process group through a child handshake or bounded polling. Never make cleanup correctness depend on one immediate PID/PGID observation after `setsid` or a background fork.
 - Treat node-level resource hooks such as idle GPU reservation as a fenced
   lease, not an attempt-local boolean. Acquisition publishes an owner and
   monotonically newer generation under a node-local lock. A cleanup trap may
   restore the idle state only if its owner/generation is still current and no
   successor workload lease is active; a stale attempt exiting after its
-  successor must be a no-op. Idempotency within one trap is insufficient.
+  successor must be a no-op. Keep the generation lock held until the idle-state
+  restore itself completes, so a successor cannot run its release/acquire hook
+  between ownership validation and the old attempt's delayed restore.
+  Idempotency within one trap is insufficient.
 - On any node failure, terminate the whole worker group unless the framework's elastic recovery semantics were deliberately designed and tested.
 - Preserve failed attempt evidence. Retry with a new attempt and nonce after repairing the cause; do not overwrite ambiguous lineage.
 - Before relying on frozen code on multiple nodes, prove reachability and
