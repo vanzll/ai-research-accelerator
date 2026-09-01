@@ -34,6 +34,22 @@ Every prompt sent to a training-node Codex should include:
 
 The prompt must be self-contained; assume the remote Codex has no prior conversation. Include complete checkout, test, and launch commands rather than referring to an earlier prompt.
 
+## Durable Remote Retrospective
+
+Every remote-Agent experiment prompt must name one absolute, attempt-scoped
+shared-storage file, normally `<attempt-root>/agent-retrospective.md`. The
+prompt contract is: after each diagnosed retry and before Goal completion or
+blocking, record the failed stage and evidence, root cause/confidence, exact
+repair and commit, scientific/config impact, validation, and uncertainty in
+that file; leave `Reviewed` and `Absorbed` unchecked and never record secrets.
+A later local Agent marks `Reviewed` after evidence triage and `Absorbed` only
+after recording a validated canonical skill commit. Use `Reviewed: no reusable
+change` when appropriate.
+
+Use one writer per file. In a multi-node Agent workflow, workers write
+`<attempt-root>/agent-retrospective.d/<node>.md`; the coordinator alone
+consolidates `<attempt-root>/agent-retrospective.md`.
+
 ## Send-and-Forget Startup Contract
 
 The user should be able to send one prompt and stop supervising startup. The

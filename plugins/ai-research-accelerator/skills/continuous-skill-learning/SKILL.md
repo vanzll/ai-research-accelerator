@@ -25,6 +25,19 @@ recovery merely to edit a skill: first contain or fix the incident, preserve
 evidence, then perform the audit before final handoff. A valid audit may decide
 that no skill change is warranted.
 
+## Consume delegated-run retrospectives
+
+When analyzing a W&B run, reconciling its ledger, or resuming remote training,
+read the attempt retrospective named by the run contract before the learning
+audit. Treat it as an index, not proof; verify claims against logs, code,
+commits, tests, and W&B. Mark `Reviewed` after triage (`no reusable change` is
+valid), and mark `Absorbed` only after the canonical skill is corrected,
+synchronized, validated, and its commit recorded.
+
+Do not mark a remote hypothesis absorbed merely because its repair coincided
+with a successful retry. Leave uncertain lessons pending and preserve the
+evidence path for later runs.
+
 ## Require evidence before learning
 
 Record the incident in the current project's established progress document with

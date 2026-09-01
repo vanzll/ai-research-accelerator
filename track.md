@@ -628,3 +628,15 @@
   local torchrun, keeping the outer launcher in the master supervisor for exit
   propagation and gang cleanup. A user-requested launch prompt therefore goes
   only to the master/Node 0 Goal Agent.
+
+## 2026-09-01 - Persist remote experiment lessons for skill ingestion
+
+- Remote experiment prompts now freeze an attempt-scoped shared retrospective
+  path. Goal Agents must record evidence-backed failures, repairs, commits,
+  semantic impact, validation, and uncertainty there instead of leaving the
+  knowledge only in a remote conversation.
+- W&B analysis and ledger reconciliation now consume that retrospective before
+  conclusions. Continuous skill learning separately marks evidence review and
+  actual absorption, and checks `Absorbed` only after the canonical skill is
+  synchronized and validated. Multinode writers remain race-free: workers use
+  per-node files and Node 0 alone consolidates the attempt summary.

@@ -43,6 +43,11 @@ constraints:
   `FIRST_WORK_VALIDATED` evidence;
 - every shared operational repair needs a regression test, new commit, and new
   attempt/nonce. An uncertain semantic effect requires user approval.
+- the launch prompt names `<attempt-root>/agent-retrospective.md`; Node 0 is its
+  sole writer and records evidence, repairs, commits, validation, and unresolved
+  uncertainty across retries. Worker Agents, when present, write one file each
+  under `<attempt-root>/agent-retrospective.d/` for coordinator consolidation.
+  Conversation-only incident knowledge is not a durable handoff.
 
 ## Durable state machine
 

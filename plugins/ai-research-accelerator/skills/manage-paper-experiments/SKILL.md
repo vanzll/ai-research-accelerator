@@ -72,6 +72,9 @@ Only add metrics that can distinguish the experiment's hypotheses. State what ea
 Before scheduling:
 
 - freeze the exact commit SHA, launcher/config, dependencies, seed, budget, W&B project/group/tags, and experiment ID;
+- assign an absolute, attempt-scoped remote retrospective path, normally
+  `<attempt-root>/agent-retrospective.md`, and record it in the run contract and
+  ledger so later sessions can recover remote repairs without chat history;
 - freeze the expected W&B display name or deterministic name pattern and the startup handshake fields that will identify the run;
 - specify evaluation steps and whether best selection uses a shared grid;
 - specify final and best checkpoint retention, pruning, and disk limits;
@@ -136,6 +139,11 @@ Choose one orchestration mode before launch:
 Never emulate either mode with a Codex loop that sleeps and polls.
 
 - Include exact hostname, repository/source checkout, full SHA, tests, queue command, experiment IDs, expected W&B display names, logs, markers, and recovery boundaries directly in the prompt. Never assume the remote agent remembers prior context.
+- Include the literal retrospective path. Require the remote Agent to update it
+  after each diagnosed retry and before Goal completion or blocking with the
+  failed stage, primary evidence, root cause and confidence, exact repair and
+  commit, semantic/config impact, validation, and remaining uncertainty. The
+  prompt must not leave these lessons only in the remote conversation.
 - Do not define bootstrap success as “command returned” or “reservation
   created”. The agent must verify the persistent supervisor, its durable
   heartbeat/log, frozen environment, queue contract, and GPU cleanup trap.
@@ -164,6 +172,10 @@ Never emulate either mode with a Codex loop that sleeps and polls.
 For every running experiment:
 
 - confirm that the W&B config matches the frozen contract;
+- when analyzing a W&B run or maintaining its ledger row, read the attempt's
+  remote retrospective before drawing conclusions, reconcile its claims with
+  logs/code/W&B, and run `continuous-skill-learning` on verified reusable
+  lessons;
 - inspect summary and history, including per-update and per-timestep diagnostics;
 - distinguish a stalled logger from a stalled trainer;
 - compare progress using the pre-declared horizontal axis;
