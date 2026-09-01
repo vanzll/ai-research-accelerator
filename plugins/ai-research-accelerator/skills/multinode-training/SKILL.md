@@ -79,6 +79,13 @@ executor, prefer one coordinator plus deterministic worker supervisors. Use a
 multi-Agent bus only when workers need independent Agent judgment or no direct
 executor is available.
 
+For a fixed allocation with direct execution, give only Node 0 a Goal prompt.
+Freeze `node rank -> connection endpoint -> expected hostname`, have Node 0
+connect through the working endpoint and attest the returned hostname before
+each launch, and start the frozen node wrapper in a durable node-local
+supervisor. Worker nodes do not need Coding Agents. Use shared storage for
+contracts, logs, milestones, and terminal evidence, not as a message bus.
+
 Load `shared-filesystem-agent-coordination` before designing remote-Agent
 prompts, a shared-file message bus, or an autonomous repair loop. It owns the
 general coordinator/worker topology, first-mile bootstrap, request/ACK/result
@@ -97,8 +104,9 @@ user approval.
 
 The Node 0 Goal may own global diagnosis and semantics-preserving recovery only
 through the declared first-work gate. Deterministic supervisors own waiting and
-training processes; ordinary worker Agents handle bounded node-local incidents.
-Worker dispatchers remain alive across failed training attempts and terminate
+training processes. When an Agent bus is actually required, ordinary worker
+Agents handle bounded node-local incidents. Worker dispatchers remain alive
+across failed training attempts and terminate
 normally only after validating the exact Node 0 host and Goal thread's fenced
 `GOAL_COMPLETED` directive; attempt evidence and trainer processes remain
 attempt-scoped. Failure or idle states do not authorize dispatcher shutdown.

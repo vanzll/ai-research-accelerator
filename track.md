@@ -610,5 +610,7 @@
   accepts one platform-approved endpoint after command-level host/user
   attestation, freezes that endpoint per worker, and defaults to one coordinator
   plus deterministic worker supervisors when direct execution is available.
-  A shared Agent bus remains appropriate only for independent worker judgment
-  or when no direct executor exists.
+  In this mode only Node 0 receives a Goal prompt; worker nodes need no Coding
+  Agent, and shared storage carries evidence rather than Agent messages. A
+  shared Agent bus remains appropriate only for independent worker judgment or
+  when no direct executor exists.
