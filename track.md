@@ -640,3 +640,13 @@
   actual absorption, and checks `Absorbed` only after the canonical skill is
   synchronized and validated. Multinode writers remain race-free: workers use
   per-node files and Node 0 alone consolidates the attempt summary.
+
+## 2026-09-02 - Separate reward visibility from replayed-surrogate fit
+
+- A cross-domain video/image comparison showed that a noisy online reward curve
+  with very few prompt groups can hide genuine held-out improvement, while a
+  falling second replay loss can reflect repeated fitting of frozen rows and
+  targets rather than new reward information.
+- The reporting protocol now requires group-level sample context and
+  uncertainty for online reward, per-substep replay diagnostics, reward gain on
+  several accounting axes, and matched controls before causal attribution.

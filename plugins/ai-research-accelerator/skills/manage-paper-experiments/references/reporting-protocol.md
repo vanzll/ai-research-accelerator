@@ -18,6 +18,23 @@ Recommended curve summary:
 
 Do not smooth away collapse. State smoothing parameters in the figure caption.
 
+## Online Reward and Replayed Surrogates
+
+Report the number of independent prompt/state groups, candidates per group, and
+the aggregation window behind online reward. A visually flat noisy curve is not
+evidence of no learning by itself: compare early/late window means, uncertainty
+at the group level, and held-out evaluation. More candidates or groups can make
+the same trend easier to see without changing the underlying objective.
+
+When an optimizer substep reuses the same rows, rewards, and frozen targets,
+separate its loss and effective-sample statistics from fresh/disjoint updates.
+A lower replayed surrogate loss proves better fit to that surrogate, not new
+reward information or improved held-out reward. Diagnose reward gain per
+rollout, optimizer step, and reward call; use matched replay/disjoint controls
+before making a causal claim. If model, optimizer, sampling, topology, or
+timestep schedule also changed, label the result as mechanism evidence rather
+than a single-variable attribution.
+
 ## Held-Out Evaluation
 
 Report at least:
