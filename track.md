@@ -737,3 +737,22 @@
   implementation and review handoff, preventing a clean-context Agent from
   unknowingly branching from stale main or treating remote integration as part
   of the launch phase.
+
+## 2026-09-02 - Make prompt generation an incremental code-promotion release gate
+
+- Two independent workflow reviews converged on one root incident index rather
+  than duplicated retrospectives. Projects now keep structured records under
+  `踩坑记录/`, link large external evidence, and distinguish the prompt commit,
+  successful runtime commit, and later documentation commit.
+- Executable experiment prompts now default to the complete release workflow:
+  ingest only new incident-index records, compare actual Git lineages, promote
+  applicable operational fixes with behavioral regressions, preserve an
+  independent science baseline, test and push the candidate, and emit an
+  immutable launch-bundle hash for that exact reachable commit.
+- A certified production runtime caches unchanged history using the incident
+  generation, executable tree, manifest, validator, regression receipt, and
+  science baseline. Dynamic host/process/capacity checks remain uncached.
+- Skill prose and ancestry alone do not prove absorption. Applicable pending
+  repairs, uncertain deltas, unapproved scientific changes, tests that were not
+  run on the candidate, or a commit unavailable from the canonical remote all
+  block the next related prompt.

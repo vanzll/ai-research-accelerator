@@ -90,6 +90,16 @@ fresh matching evidence for any expensive property that cannot be tested
 locally. Remote semantics-preserving repair authority is an emergency safety
 net, not the planned development or integration loop.
 
+Unless the user explicitly requests discussion or a draft, a request for an
+executable multi-node prompt is also a request to finish and release the code,
+config, launcher, and launch bundle. Before writing the prompt, reconcile the
+repository-root `踩坑记录/` incident index, promote all applicable prior repairs,
+run the production-runtime and science-contract gates, commit the candidate,
+and push it to the authorized canonical remote. The prompt must name that
+reachable full commit and the exact tested launch-bundle hash. Do not hand out a
+speculative command and plan for the remote Goal Agent to perform ordinary
+integration.
+
 Before branching a new algorithm or experiment profile, identify the latest
 accepted production runtime and review its retrospective and exact operational
 delta. Promote every still-applicable, semantics-preserving repair into the
@@ -103,6 +113,23 @@ delegation. The manifest and validator workflow are defined in
 [production-runtime-promotion.md](references/production-runtime-promotion.md).
 Do not treat a passing feature test suite as a substitute for this promotion
 gate; it answers a different question.
+
+Audit real Git state, not summaries. For each new incident record, compare the
+prompt commit with the sustained-success runtime commit, inspect the merge base,
+commit list, changed paths, and relevant patch, and classify every delta. Port
+semantics-preserving operational repairs with behavioral regressions; do not
+merge a mixed remote branch wholesale. A docs-only descendant is not the
+runtime commit, ancestry alone does not prove a later candidate still contains
+the behavior, and test-file existence does not prove the regression passed.
+
+Avoid repeating this full audit for unchanged history. Certify a production
+runtime against an incident-index generation, executable tree hash, manifest
+hash, validator version, regression receipt, and science baseline. A routine
+profile may reuse that certificate and inspect only newer records. Invalidate
+it when the runtime/launcher/dependency tree, manifest/schema, science baseline,
+or applicable incident generation changes. Always recheck dynamic facts such as
+host identity, capacity, ports, disk, active processes, reservations, and W&B
+identity.
 
 ## Keep cluster launch backends replaceable
 
@@ -147,6 +174,13 @@ connect through the working endpoint and attest the returned hostname before
 each launch, and start the frozen node wrapper in a durable node-local
 supervisor. Worker nodes do not need Coding Agents. Use shared storage for
 contracts, logs, milestones, and terminal evidence, not as a message bus.
+
+The Node 0 prompt identifies the root incident index and the attempt's incident
+record. If emergency repair is needed, Node 0 records the original prompt
+commit/command, failed attempts, successful runtime commit/command, exact Git
+delta, validation, science impact, and any later docs-only record commit before
+Goal completion. Keep the control checkout that owns `踩坑记录/` separate from
+the clean detached runtime worktree used for training.
 
 Load `shared-filesystem-agent-coordination` before designing remote-Agent
 prompts, a shared-file message bus, or an autonomous repair loop. It owns the

@@ -21,12 +21,45 @@ OBSERVED
 Do not launch a new profile while an applicable fix remains only in an attempt
 checkout, conversation, retrospective, or non-descendant branch.
 
+## One repository incident index
+
+Keep one project-owned index under the repository root:
+
+```text
+踩坑记录/
+  README.md
+  ledger.json
+  attempts/<experiment-id>/<attempt-nonce>.json
+  receipts/<receipt-id>.json
+```
+
+Large logs remain in attempt storage and are referenced by path and hash. The
+experiment ledger links an `incident_id`; the production manifest links the
+same ID and promotion receipt; skills change only when the incident exposes a
+reusable instruction defect. Do not copy the same narrative into multiple
+ledgers.
+
+Use a normal control checkout to maintain this tracked index, and launch from a
+separate clean detached runtime worktree. A post-run docs commit may update the
+index without being confused with the commit that actually trained.
+
+Each repair record includes the prompt commit and secret-free command (or
+tracked launch bundle plus hash), successful runtime commit and command,
+optional docs-only commit, merge base, commit list, changed paths or diff hash,
+pre/post science hashes, failed stage, evidence, root cause/confidence, tests,
+W&B identity, and remaining uncertainty. Its disposition is one of `pending`,
+`promoted`, `already-present`, `obsolete`, `site-specific`, `uncertain`, or
+`rejected-scientific`.
+
 ## Build the canonical runtime
 
-1. Identify the latest accepted production run and its exact runtime commit,
-   contract hash, evidence, and retrospective.
-2. Compare its operational diff with the intended feature base. Classify each
-   change as applicable, obsolete, scientific, uncertain, or site-specific.
+1. Freeze an incident-index generation and ingest only records added or changed
+   since the last certified runtime. Do not rely on “latest run” when attempts
+   may be concurrent.
+2. For every new record, compare the prompt and successful runtime commits with
+   Git: merge base, commit list, changed paths, and relevant patch. Classify
+   each delta as applicable, already present, obsolete, scientific, uncertain,
+   or site-specific.
 3. Port or reimplement every applicable semantics-preserving fix on canonical
    main. Preserve attribution to the source attempt and commit. Do not merge a
    remote branch wholesale when it mixes science and operations.
@@ -35,8 +68,13 @@ checkout, conversation, retrospective, or non-descendant branch.
    divergence, asset identity, or parser behavior.
 5. Run the incident regressions, frozen-path regressions, and any bounded real
    smoke that cannot be represented locally.
-6. Update the production-runtime manifest and validate the new profile before
-   writing its launch prompt.
+6. Update the root ledger and production-runtime manifest, commit and push the
+   candidate, verify the remote ref can materialize it, and validate that exact
+   candidate before writing its launch prompt.
+
+Promotion should bracket feature work: establish a certified production base
+first, implement the new feature on it, then perform one incremental pre-prompt
+audit in case the incident generation advanced during development.
 
 ## Manifest contract
 
@@ -47,6 +85,11 @@ Store a repository-owned JSON manifest, for example
 {
   "schema_version": 1,
   "runtime_id": "video-policy-production-v4",
+  "incident_index": {
+    "path": "踩坑记录/ledger.json",
+    "generation": 12,
+    "sha256": "<64-char SHA256>"
+  },
   "canonical_runtime_commit": "<40-char canonical commit>",
   "accepted_runtime": {
     "commit": "<40-char accepted run commit>",
@@ -55,10 +98,14 @@ Store a repository-owned JSON manifest, for example
   "fixes": [
     {
       "id": "transport-log-short-hostname",
+      "incident_id": "INC-0007",
       "status": "promoted",
+      "source_prompt_commit": "<40-char original prompt commit>",
+      "source_successful_commit": "<40-char accepted runtime commit>",
       "promoted_commit": "<40-char canonical promotion commit>",
       "source_evidence_paths": ["<incident evidence>"],
       "regression_tests": ["tests/test_transport_attestation.py"],
+      "regression_receipt": "踩坑记录/receipts/transport-log-short-hostname.json",
       "required_for_profiles": ["*"]
     }
   ],
@@ -67,6 +114,8 @@ Store a repository-owned JSON manifest, for example
       "id": "new-profile",
       "production_base_commit": "<same canonical runtime commit>",
       "required_fix_ids": ["transport-log-short-hostname"],
+      "launch_bundle_path": "runners/new-profile/launch-bundle.json",
+      "launch_bundle_sha256": "<64-char SHA256>",
       "science_contract_path": "runners/new-profile/science_contract.json",
       "science_contract_sha256": "<64-char SHA256>"
     }
@@ -95,6 +144,13 @@ files, clean checkout, and the science-contract hash. Passing it does not run
 the regressions; the release record must include their actual command and
 result.
 
+A production certificate is reusable only when its incident generation,
+executable tree hash, manifest hash, validator version, regression receipt, and
+independently frozen science baseline still match. Invalidate it for runtime,
+launcher, dependency, schema, science-baseline, or newly applicable incident
+changes. Do not invalidate it for unchanged prose or unrelated experiment
+records. Dynamic host/process/capacity checks are never cached.
+
 ## Delegation gate
 
 The coordinator's handoff names the validated manifest, profile, candidate
@@ -103,3 +159,15 @@ risk. Remote repair authority remains a fallback for genuinely new environment
 failures. If the remote Agent rediscovers a manifest fix, treat that as a
 release-gate defect and repair the canonical runtime before another profile is
 launched.
+
+The gate is not satisfied by ancestry or test-file existence alone. Require a
+regression receipt from the exact executable candidate, evidence that the fix's
+behavior remains present after later commits, a candidate-bound manifest and
+launch bundle, preserved independent science hash, and remote reachability of
+the named commit. No applicable or uncertain incident may remain pending.
+
+Prefer an immutable `launch-bundle.json` containing normalized argv, relevant
+non-secret environment, assets, topology, contract hashes, runtime commit, and
+launcher digest. The remote prompt then carries the bundle path/hash, target
+identity, one bootstrap command, repair authority, and success lifecycle instead
+of duplicating stable launch details in prose.

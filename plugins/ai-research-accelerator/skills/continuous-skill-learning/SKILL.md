@@ -34,6 +34,20 @@ commits, tests, and W&B. Mark `Reviewed` after triage (`no reusable change` is
 valid), and mark `Absorbed` only after the canonical skill is corrected,
 synchronized, validated, and its commit recorded.
 
+For repository work, keep one discoverable incident index under the repository
+root, normally `踩坑记录/`. Attempt storage may retain large logs and runtime
+evidence, but the root index must link them; chat history and unindexed shared
+paths are not durable project memory. Do not duplicate the same incident into
+several competing ledgers.
+
+A code-repair record must identify both sides of the delegation: the full
+commit and secret-free launch command supplied by the prompt, the full commit
+and command that produced sustained successful execution, and any later
+documentation-only commit. It must also record the merge base, commit list,
+changed paths or diff hash, science-contract hashes, tests, evidence, and
+remaining uncertainty. Verify these fields against Git and runtime evidence;
+the remote Agent's prose is an index, not proof.
+
 Track instruction learning and executable repair promotion separately. For an
 incident caused by repository code, launcher logic, or a deterministic script,
 use at least `SkillAbsorbed` and `CodePromotion` states. `SkillAbsorbed` means
@@ -42,7 +56,17 @@ code contains the repair. Mark `CodePromotion=complete` only after the fix is
 in the canonical repository, covered by a behavioral regression, included in
 the next applicable release/base manifest, and validated there. If code work is
 outside the current scope, record `CodePromotion=pending` and block claims that
-the operational loop is closed.
+the operational loop is closed. An applicable pending repair blocks the next
+related executable prompt. A scientific or uncertain delta is not an
+operational fix merely because the retry ran successfully; reject it or require
+explicit approval under a new science contract and experiment identity.
+
+Before implementing a related feature or releasing another prompt, ingest only
+new or changed root-index records since the last reviewed generation. Classify
+each delta as `applicable-operational`, `already-present`, `obsolete`,
+`site-specific`, `uncertain`, or `scientific-change`, then update its code
+promotion state. This incremental watermark avoids rereading unchanged history
+without allowing a new remote repair to disappear from the release gate.
 
 Be critical in both directions: question whether the existing workflow or skill
 guidance contributed to the incident, and challenge every new retrospective

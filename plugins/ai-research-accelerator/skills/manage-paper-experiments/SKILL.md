@@ -72,9 +72,10 @@ Only add metrics that can distinguish the experiment's hypotheses. State what ea
 Before scheduling:
 
 - freeze the exact commit SHA, launcher/config, dependencies, seed, budget, W&B project/group/tags, and experiment ID;
-- assign an absolute, attempt-scoped remote retrospective path, normally
-  `<attempt-root>/agent-retrospective.md`, and record it in the run contract and
-  ledger so later sessions can recover remote repairs without chat history;
+- maintain one repository-root incident index under `踩坑记录/`, and assign the
+  attempt a structured record there plus any absolute shared-storage evidence
+  path needed for large logs; keep the control checkout separate from the clean
+  detached runtime worktree;
 - freeze the expected W&B display name or deterministic name pattern and the startup handshake fields that will identify the run;
 - specify evaluation steps and whether best selection uses a shared grid;
 - specify final and best checkpoint retention, pruning, and disk limits;
@@ -137,6 +138,13 @@ attest, and hand off that command. Its bounded bug-fix authority and
 retrospective capture unexpected environment failures, but they are not the
 default implementation or debugging strategy.
 
+Unless the user explicitly asks only for discussion or a draft, asking for an
+experiment prompt includes finishing the code/config/launcher, incrementally
+reconciling new `踩坑记录/` entries, promoting applicable repairs with behavioral
+regressions, validating an already certified production runtime, committing and
+pushing the candidate, and generating an immutable launch bundle. Emit the
+prompt only for that remotely reachable full commit and bundle hash.
+
 Choose one orchestration mode before launch:
 
 - **Deterministic formal queue:** when all experiments and dependencies are
@@ -154,12 +162,19 @@ Choose one orchestration mode before launch:
 
 Never emulate either mode with a Codex loop that sleeps and polls.
 
-- Include exact hostname, repository/source checkout, full SHA, tests, queue command, experiment IDs, expected W&B display names, logs, markers, and recovery boundaries directly in the prompt. Never assume the remote agent remembers prior context.
-- Include the literal retrospective path. Require the remote Agent to update it
+- Include exact hostname and either all frozen launch details or an immutable
+  launch-bundle path plus SHA256. The bundle contains repository/source
+  checkout, full SHA, tests, queue command, experiment IDs, expected W&B names,
+  logs, markers, and recovery boundaries. Never refer to an earlier prompt or
+  assume the remote Agent remembers prior context.
+- Include the root incident record and literal external evidence path. Require
+  the remote Agent to update them
   after each diagnosed retry and before Goal completion or blocking with the
-  failed stage, primary evidence, root cause and confidence, exact repair and
-  commit, semantic/config impact, validation, and remaining uncertainty. The
-  prompt must not leave these lessons only in the remote conversation.
+  failed stage, primary evidence, root cause/confidence, original prompt
+  commit/command, successful runtime commit/command, exact Git delta, optional
+  later docs-only commit, semantic/config impact, validation, and remaining
+  uncertainty. The prompt must not leave these lessons only in the remote
+  conversation.
 - Do not define bootstrap success as “command returned” or “reservation
   created”. The agent must verify the persistent supervisor, its durable
   heartbeat/log, frozen environment, queue contract, and GPU cleanup trap.
@@ -192,6 +207,9 @@ For every running experiment:
   remote retrospective before drawing conclusions, reconcile its claims with
   logs/code/W&B, and run `continuous-skill-learning` on verified reusable
   lessons;
+- update the root incident index with its reviewed and code-promotion
+  disposition; prose review does not close a code repair, and a related prompt
+  remains blocked while an applicable repair is pending outside canonical main;
 - inspect summary and history, including per-update and per-timestep diagnostics;
 - distinguish a stalled logger from a stalled trainer;
 - compare progress using the pre-declared horizontal axis;

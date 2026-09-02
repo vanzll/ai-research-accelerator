@@ -32,23 +32,49 @@ Every prompt sent to a training-node Codex should include:
 10. **Child-shell environment:** activation and executable/import probes performed inside the exact tmux or persistent shell that will launch training.
 11. **Retry authority:** a bounded sequence of pre-authorized attempt and queue IDs so recoverable failures do not require another user message.
 
-The prompt must be self-contained; assume the remote Codex has no prior conversation. Include complete checkout, test, and launch commands rather than referring to an earlier prompt.
+The prompt must be self-contained; assume the remote Codex has no prior
+conversation. Include complete checkout, test, and launch commands inline or
+name one immutable launch bundle with its SHA256 and bootstrap command. Never
+refer to an earlier prompt.
 
 ## Durable Remote Retrospective
 
-Every remote-Agent experiment prompt must name one absolute, attempt-scoped
-shared-storage file, normally `<attempt-root>/agent-retrospective.md`. The
-prompt contract is: after each diagnosed retry and before Goal completion or
-blocking, record the failed stage and evidence, root cause/confidence, exact
-repair and commit, scientific/config impact, validation, and uncertainty in
-that file; leave `Reviewed` and `Absorbed` unchecked and never record secrets.
-A later local Agent marks `Reviewed` after evidence triage and `Absorbed` only
-after recording a validated canonical skill commit. Use `Reviewed: no reusable
-change` when appropriate.
+Every remote-Agent experiment prompt names one structured repository record
+under `<repo>/踩坑记录/attempts/<experiment-id>/<attempt-nonce>.json` and any
+external attempt-storage evidence path. The root `踩坑记录/ledger.json` is the
+single incident index; the experiment ledger and production manifest reference
+its `incident_id` instead of copying the narrative.
+
+After each diagnosed retry and before Goal completion or blocking, record:
+
+```text
+PromptCommit: <full SHA from the handoff>
+PromptLaunch: <secret-free command or tracked launch bundle + SHA256>
+SuccessfulRuntimeCommit: <full SHA actually running>
+SuccessfulLaunch: <secret-free command or tracked launch bundle + SHA256>
+RetrospectiveCommit: <optional later docs-only SHA>
+PromptToSuccessDiff: <merge base, commit list, changed paths, diff hash>
+Repair: <failed stage, evidence, root cause/confidence, validation>
+ScienceImpact: none | changed | uncertain
+RemainingUncertainty: <text>
+Reviewed: unchecked
+CodePromotion: pending
+```
+
+Never record secrets or large logs in the repository record. A later local
+Agent verifies it against Git, tests, W&B, and attempt evidence. Code absorption
+is complete only after every applicable repair is in canonical main, covered by
+a behavioral regression on the exact release candidate, and required by the
+consuming profile. Skill prose alone is not absorption. Use `Reviewed: no
+reusable change` when appropriate.
 
 Use one writer per file. In a multi-node Agent workflow, workers write
 `<attempt-root>/agent-retrospective.d/<node>.md`; the coordinator alone
 consolidates `<attempt-root>/agent-retrospective.md`.
+
+Maintain the root index from a control checkout and run training from a separate
+clean detached worktree. This lets the coordinator commit incident metadata
+without dirtying or changing the runtime commit.
 
 ## Send-and-Forget Startup Contract
 
