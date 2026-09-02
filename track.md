@@ -695,3 +695,16 @@
   not training: the trainer, durable supervisor, GPU lease, and tracker remain
   live unless the user explicitly requested a bounded smoke or the frozen run
   reaches its natural terminal/failure policy.
+
+## 2026-09-02 - Require sustained optimizer progress before launch acceptance
+
+- A distributed video-RL pipeline can publish a W&B row when rollout finishes
+  and then deadlock during backward or an optimizer collective. One visible
+  tracker step, and even one or two completed updates, is therefore weak proof
+  that a formal run is healthy.
+- Formal delegated launches now require at least five globally completed finite
+  optimizer updates, expected-rank evidence at those boundaries, and progress
+  into the next cycle before recording
+  `SUSTAINED_TRAINING_VALIDATED_AND_RUNNING`. Deadlock monitoring uses rank-aware
+  phase and collective evidence rather than W&B `_step` alone, and successful
+  handoff still leaves the trainer running.

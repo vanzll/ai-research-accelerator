@@ -65,6 +65,8 @@ Symptoms:
 
 - all ranks start but stop at initialization, backward, metric reduction, or checkpoint;
 - some ranks exit while others stay at 100% or 0% GPU utilization.
+- W&B shows a rollout/reward or nominal training step, but the globally
+  completed optimizer counter does not advance.
 
 Checks:
 
@@ -73,6 +75,17 @@ Checks:
 - empty or uneven batches causing branch divergence;
 - rank-0-only code accidentally calling a collective;
 - correct network interface and transport.
+
+Do not use tracker `_step` as a distributed liveness counter. Instrument
+rank-aware enter/exit events for rollout, reward gather, backward, gradient
+reduction, optimizer step, and the next cycle. Normal-running acceptance needs
+at least five globally completed finite optimizer updates plus subsequent phase
+progress. If the counter stalls beyond a phase-specific deadline, preserve the
+job long enough to capture per-rank stack traces, last enter/exit events,
+process-group membership, collective sequence, NCCL/KCCL diagnostics, GPU
+state, and the subset of missing ranks. Then repair the mismatched branch,
+collective order, process-group use, or failed rank under a new attempt; do not
+misclassify a pre-backward W&B row as successful training.
 
 Use `NCCL_DEBUG=INFO` and `TORCH_DISTRIBUTED_DEBUG=DETAIL` for a bounded reproduction. NCCL auto-selects interfaces; set `NCCL_SOCKET_IFNAME` only after identifying the correct cross-node interface. Persistent debug logging can be expensive and should not silently remain in formal runs.
 

@@ -340,7 +340,7 @@ Do not repeat a costly transport matrix for each formal attempt when a frozen re
 
 Use a static rendezvous for a fixed research run unless elastic membership and checkpoint-resume semantics have been explicitly designed and tested.
 
-## First-work validation
+## First-work and sustained-progress validation
 
 Do not wait until job completion to discover a partial launch. Require:
 
@@ -353,16 +353,22 @@ Do not wait until job completion to discover a partial launch. Require:
 
 Write immutable per-node completion records at the optimizer boundary, then derive `TRAINING_FIRST_WORK_VALIDATED` from distributed evidence. Track cloud visibility separately as `TRACKER_VERIFIED`. Do not require tracker visibility and instantaneous worker PID counts to be true in the same poll: cloud history is asynchronous and workers may legitimately enter teardown. The durable distributed milestone proves rank participation; tracker verification proves observability.
 
-For a formal experiment, derive a separate
-`FIRST_WORK_VALIDATED_AND_RUNNING` handoff only after first-work evidence is
-complete and the durable supervisor still owns a live trainer. This milestone
-ends launch/recovery ownership; it does not end the trainer. Do not interpret a
-Goal success predicate, an acceptance JSON, or tracker visibility as authority
-to send `SIGINT`/`SIGTERM`, kill tmux, restore an idle GPU reservation, or close
-the tracker run. Only an explicit user request, the frozen experiment's natural
-terminal condition, or its declared failure policy may stop the formal job. A
-bounded smoke that intentionally stops after acceptance must say so explicitly
-and use a separate smoke identity.
+First-work is an early diagnostic gate. For a formal delegated experiment,
+derive `SUSTAINED_TRAINING_VALIDATED_AND_RUNNING` only after at least five
+globally completed finite optimizer updates, complete expected-rank evidence at
+those boundaries, and observable progress into the next training cycle. Use a
+contract-defined stronger threshold when present. A W&B `_step`, rollout
+counter, reward row, or rank-0 log line is not sufficient: pipelines may publish
+those before backward or the distributed optimizer boundary and then deadlock.
+
+The sustained milestone ends launch/recovery ownership; it does not end the
+trainer. Do not interpret a Goal success predicate, an acceptance JSON, or
+tracker visibility as authority to send `SIGINT`/`SIGTERM`, kill tmux, restore
+an idle GPU reservation, or close the tracker run. Only an explicit user
+request, the frozen experiment's natural terminal condition, or its declared
+failure policy may stop the formal job. A bounded smoke that intentionally
+stops after acceptance must say so explicitly and use a separate smoke
+identity.
 
 Test the exact tracker API query against a real minimal run before making it a kill condition. Projected history queries can omit a valid step zero depending on API behavior; a false-negative telemetry probe must not terminate otherwise healthy training. After a bounded visibility wait, record an `OBSERVABILITY_DEGRADED` state and preserve training unless the frozen experiment contract explicitly requires fail-closed telemetry.
 
@@ -434,10 +440,11 @@ A send-and-forget prompt must give the remote agent:
 - process-group ownership and cleanup hooks;
 - durable logs and marker paths;
 - failure behavior and retry prohibition;
-- an Agent stopping rule and a separate job stopping rule: after validation,
-  hand monitoring to a deterministic supervisor without model-driven polling,
-  while formal training remains alive unless the user explicitly requested a
-  bounded smoke or stop-after-acceptance behavior.
+- an Agent stopping rule and a separate job stopping rule: after sustained
+  progress (at least five globally completed finite optimizer updates plus next
+  cycle progress), hand monitoring to a deterministic supervisor without
+  model-driven polling, while formal training remains alive unless the user
+  explicitly requested a bounded smoke or stop-after-acceptance behavior.
 
 For an explicitly authorized autonomous repair workflow, replace an absolute
 retry prohibition with a narrow repair policy: list allowed operational bug
@@ -453,9 +460,9 @@ An ordinary bootstrap or worker agent should exit after it has verified the
 frozen supervisor, environment, cleanup trap, and tracker startup identity. The
 token-free supervisor owns mechanical first-work observation and the formal
 run. In the explicit coordinator-Goal hybrid, the coordinator Goal instead
-retains decision and recovery ownership until `FIRST_WORK_VALIDATED`, then
-records `FIRST_WORK_VALIDATED_AND_RUNNING`, hands the live trainer to its
-deterministic supervisor, and completes without signaling or cleaning up the
+retains decision and recovery ownership until
+`SUSTAINED_TRAINING_VALIDATED_AND_RUNNING`, then hands the live trainer to its
+deterministic supervisor and completes without signaling or cleaning up the
 job; if it exits earlier, it must first hand decision ownership to an ordinary
-coordinator relay. Never leave the first-work response path ownerless, and never
-make worker agents sleep and poll until an optimizer step or formal completion.
+coordinator relay. Never leave the launch response path ownerless, and never
+make worker agents sleep and poll until formal completion.

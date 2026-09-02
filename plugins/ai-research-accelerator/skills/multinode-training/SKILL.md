@@ -53,18 +53,18 @@ The stages below describe separate failure domains, not mandatory work for every
 4. **Cluster-ready barrier:** require nonce- and child-identity-bound application readiness from every expected node. A rank-0 process alone is insufficient.
 5. **Transport validation:** if the hosts, topology, network stack, or loaded communication library are new or changed, run a bounded collective with the exact topology. Otherwise verify and reuse a frozen report from repeated successful probes with matching identities.
 6. **Distributed launch:** start the same frozen command on every node with unique node rank and identical rendezvous values.
-7. **First-work validation:** persist immutable local evidence when all ranks complete one global batch or rollout and optimizer step; verify finite global metrics and tracker visibility independently.
-8. **Durable handoff:** once validated, a deterministic supervisor owns monitoring, cleanup, and authorized transitions. Do not keep an agent polling.
+7. **First-work validation:** persist immutable local evidence when all ranks complete one global batch or rollout and optimizer step; verify finite global metrics and tracker visibility independently. This is an early diagnostic milestone, not formal normal-running acceptance.
+8. **Sustained-progress validation:** for a delegated formal run, require at least five globally completed finite optimizer updates and evidence that the next training cycle is advancing. A tracker row or rollout counter is not optimizer-step evidence.
+9. **Durable handoff:** once sustained progress is validated, a deterministic supervisor owns monitoring, cleanup, and authorized transitions. Do not keep an agent polling.
 
-First-work validation is a handoff milestone, not permission to stop a formal
-experiment. Unless the frozen contract explicitly defines a bounded smoke that
-must stop after acceptance, successful delegation means
-`FIRST_WORK_VALIDATED_AND_RUNNING`: record the evidence, leave the trainer,
-tmux/supervisor, GPU lease, and tracker run alive, and hand monitoring to the
-deterministic supervisor. Agent or Goal completion is separate from job
-completion. A remote Agent must not send an interrupt, close the session,
-restore the idle GPU reservation, or finish/crash the tracker merely because
-the first-work gate passed.
+Unless the frozen contract explicitly defines a bounded smoke that must stop
+after acceptance, successful delegation means
+`SUSTAINED_TRAINING_VALIDATED_AND_RUNNING`: record both first-work and
+sustained-progress evidence, leave the trainer, tmux/supervisor, GPU lease, and
+tracker run alive, and hand monitoring to the deterministic supervisor. Agent
+or Goal completion is separate from job completion. A remote Agent must not
+send an interrupt, close the session, restore the idle GPU reservation, or
+finish/crash the tracker merely because an acceptance gate passed.
 
 Do not insert a new smoke between an already successful exact-topology smoke and a formal run unless code, assets, topology, communication stack, or algorithm semantics changed. A direct formal launch with an early first-work handshake is appropriate when matching evidence already exists. For exact marker contents, evidence reuse, asset rules, process-group cleanup, and remote prompt requirements, follow [reliable-launch.md](references/reliable-launch.md).
 
@@ -110,10 +110,12 @@ Select the backend explicitly; do not guess from whichever executable happens
 to be installed. Priority is: verified allocation-native launcher, authenticated
 coordinator-to-worker execution, then an Agent bus. When the user requests a
 remote launch prompt, provide one self-contained master/Node 0 Goal prompt that
-runs the frozen adapter and continues through first-work validation. State the
-postcondition explicitly: after validation, formal training remains running
-under its durable supervisor unless the user requested a bounded smoke. Worker
-Agents are unnecessary for deterministic node wrappers.
+runs the frozen adapter through sustained-progress validation, not merely the
+first tracker row or first optimizer step. State the postcondition explicitly:
+after at least five globally completed finite optimizer updates and evidence of
+continued progress, formal training remains running under its durable
+supervisor unless the user requested a bounded smoke. Worker Agents are
+unnecessary for deterministic node wrappers.
 
 ## AI-assisted repair and node collaboration
 
