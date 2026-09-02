@@ -56,6 +56,16 @@ The stages below describe separate failure domains, not mandatory work for every
 7. **First-work validation:** persist immutable local evidence when all ranks complete one global batch or rollout and optimizer step; verify finite global metrics and tracker visibility independently.
 8. **Durable handoff:** once validated, a deterministic supervisor owns monitoring, cleanup, and authorized transitions. Do not keep an agent polling.
 
+First-work validation is a handoff milestone, not permission to stop a formal
+experiment. Unless the frozen contract explicitly defines a bounded smoke that
+must stop after acceptance, successful delegation means
+`FIRST_WORK_VALIDATED_AND_RUNNING`: record the evidence, leave the trainer,
+tmux/supervisor, GPU lease, and tracker run alive, and hand monitoring to the
+deterministic supervisor. Agent or Goal completion is separate from job
+completion. A remote Agent must not send an interrupt, close the session,
+restore the idle GPU reservation, or finish/crash the tracker merely because
+the first-work gate passed.
+
 Do not insert a new smoke between an already successful exact-topology smoke and a formal run unless code, assets, topology, communication stack, or algorithm semantics changed. A direct formal launch with an early first-work handshake is appropriate when matching evidence already exists. For exact marker contents, evidence reuse, asset rules, process-group cleanup, and remote prompt requirements, follow [reliable-launch.md](references/reliable-launch.md).
 
 Keep a strict complexity budget: prefer one canonical contract validator, one
@@ -69,6 +79,15 @@ with versioned result schemas. Remote Agents execute and interpret those
 scripts; they do not each improvise a parser for the same evidence. Keep
 immutable science fields separate from dynamic attempt/fencing state so a valid
 retry is not rejected by a stale hard-coded validator.
+
+Treat one-shot launcher readiness as the implementation Agent's responsibility,
+not as work to defer to the training-node Coding Agent. Before handing off a
+launch command or Goal prompt, finish and freeze the node wrapper, allocation
+adapter, environment inheritance, rank mapping, process ownership, failure
+propagation, GPU lease, evidence paths, and relevant regression tests; replay
+fresh matching evidence for any expensive property that cannot be tested
+locally. Remote semantics-preserving repair authority is an emergency safety
+net, not the planned development or integration loop.
 
 ## Keep cluster launch backends replaceable
 
@@ -91,7 +110,9 @@ Select the backend explicitly; do not guess from whichever executable happens
 to be installed. Priority is: verified allocation-native launcher, authenticated
 coordinator-to-worker execution, then an Agent bus. When the user requests a
 remote launch prompt, provide one self-contained master/Node 0 Goal prompt that
-runs the frozen adapter and continues through first-work validation. Worker
+runs the frozen adapter and continues through first-work validation. State the
+postcondition explicitly: after validation, formal training remains running
+under its durable supervisor unless the user requested a bounded smoke. Worker
 Agents are unnecessary for deterministic node wrappers.
 
 ## AI-assisted repair and node collaboration

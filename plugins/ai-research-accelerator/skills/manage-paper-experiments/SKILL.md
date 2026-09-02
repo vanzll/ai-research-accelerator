@@ -84,6 +84,15 @@ Before scheduling:
 
 Changes after launch create a new attempt. Never overwrite the identity of an existing attempt.
 
+For matched sibling experiments intended to differ by one scientific variable,
+freeze one shared operational commit as part of the comparison. If a retry
+discovers an operational repair in either sibling, integrate and validate that
+repair in the common runtime before launching further siblings; do not let each
+treatment accumulate its own launcher, synchronization, telemetry, memory, or
+distributed-lifecycle patch chain. Until all compared runs use the same repaired
+runtime, label the evidence operationally confounded and do not attribute a
+success, failure, or metric difference to the intended scientific variable.
+
 ### 4. Schedule From Actual Capacity
 
 - Inspect the node hostname, active queues, training processes, GPU use, reservations, and success markers.
@@ -120,6 +129,13 @@ able to stop watching the node. This does **not** mean the Coding Agent remains
 active for hours. The agent performs bounded bootstrap and exits; a tmux/shell
 supervisor owns waiting, stage transitions, retries, markers, and GPU cleanup.
 Long-lived agent polling is a workflow failure and wastes tokens.
+
+Do not send a remote Goal prompt as a substitute for finishing the launcher.
+First require the applicable `multinode-training` one-shot readiness evidence
+and freeze the tested command; the remote Agent should primarily execute,
+attest, and hand off that command. Its bounded bug-fix authority and
+retrospective capture unexpected environment failures, but they are not the
+default implementation or debugging strategy.
 
 Choose one orchestration mode before launch:
 

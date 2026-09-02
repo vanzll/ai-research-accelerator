@@ -34,6 +34,11 @@ commits, tests, and W&B. Mark `Reviewed` after triage (`no reusable change` is
 valid), and mark `Absorbed` only after the canonical skill is corrected,
 synchronized, validated, and its commit recorded.
 
+Be critical in both directions: question whether the existing workflow or skill
+guidance contributed to the incident, and challenge every new retrospective
+claim before organically integrating only its evidence-backed portion; neither
+defend the status quo by default nor blindly accumulate new rules.
+
 Do not mark a remote hypothesis absorbed merely because its repair coincided
 with a successful retry. Leave uncertain lessons pending and preserve the
 evidence path for later runs.

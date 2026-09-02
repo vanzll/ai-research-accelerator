@@ -650,3 +650,48 @@
 - The reporting protocol now requires group-level sample context and
   uncertainty for online reward, per-substep replay diagnostics, reward gain on
   several accounting axes, and matched controls before causal attribution.
+
+## 2026-09-02 - Keep matched retries on one operational runtime
+
+- A concurrent TA-only versus VQ/MQ video comparison preserved matched science
+  contracts except for reward weights, but the two Goals accumulated different
+  runtime repair chains. One branch gained FSDP rollout-boundary resharding and
+  compact post-step telemetry; the other added and later removed unsafe
+  barriers. Their differing run stability therefore could not be attributed to
+  reward weights alone.
+- `manage-paper-experiments` now requires matched sibling experiments to share
+  one operational commit. A proven runtime repair must be integrated into the
+  common runtime before further sibling attempts, and evidence from divergent
+  repair branches must be labeled operationally confounded.
+
+## 2026-09-02 - Make retrospective absorption bidirectionally critical
+
+- Continuous skill learning now requires critical review of both the existing
+  workflow/skill guidance and each proposed new lesson. Remote retrospectives
+  remain evidence indexes: only verified portions are integrated, and a
+  coincidentally successful retry does not justify blindly appending a rule.
+
+## 2026-09-02 - Finish multi-node launchers before remote delegation
+
+- Multi-node launcher implementation now owns a one-shot readiness gate before
+  any command or Goal prompt is handed to a training-node Agent. The frozen
+  wrapper/adapter must already cover environment inheritance, rank mapping,
+  process and GPU-lease ownership, failure propagation, evidence, and relevant
+  regressions.
+- Experiment delegation now consumes that readiness evidence and treats the
+  remote Agent as executor and attestor. Semantics-preserving repair authority
+  and retrospectives remain available for unexpected environment failures, but
+  are explicitly not the normal development or debugging loop.
+
+## 2026-09-02 - Separate first-work acceptance from trainer termination
+
+- A master-node Goal reached two finite optimizer updates and confirmed W&B
+  visibility, then interpreted `FIRST_WORK_VALIDATED` as permission to send
+  Ctrl-C. The healthy formal job stopped and W&B correctly recorded the run as
+  crashed. The launch prompt had not explicitly separated Goal completion from
+  the trainer lifecycle.
+- `multinode-training` now defines the default formal handoff as
+  `FIRST_WORK_VALIDATED_AND_RUNNING`. Acceptance ends Agent recovery ownership,
+  not training: the trainer, durable supervisor, GPU lease, and tracker remain
+  live unless the user explicitly requested a bounded smoke or the frozen run
+  reaches its natural terminal/failure policy.
