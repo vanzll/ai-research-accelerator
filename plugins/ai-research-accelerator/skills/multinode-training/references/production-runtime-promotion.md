@@ -21,6 +21,20 @@ OBSERVED
 Do not launch a new profile while an applicable fix remains only in an attempt
 checkout, conversation, retrospective, or non-descendant branch.
 
+An attempt that has not reached its declared sustained-progress gate cannot
+certify either a root cause or a successful repair. Its record must separate:
+
+- `observed`: primary log, process, stack, metric, and timing evidence;
+- `hypothesis`: the proposed causal explanation plus explicit confidence;
+- `candidate_remedy`: the exact code/config delta being tested;
+- `result`: the acceptance evidence, or `running-unvalidated` / failed stage.
+
+Do not encode an unverified cause in an incident or fix ID. A successful retry
+that changes two things validates only the combined candidate; it does not
+identify which change was causal. Require a controlled differential when that
+distinction affects what should be promoted. Until then, keep the candidate
+pending and preserve competing explanations.
+
 ## One repository incident index
 
 Keep one project-owned index under the repository root:
@@ -75,6 +89,14 @@ W&B identity, and remaining uncertainty. Its disposition is one of `pending`,
 Promotion should bracket feature work: establish a certified production base
 first, implement the new feature on it, then perform one incremental pre-prompt
 audit in case the incident generation advanced during development.
+
+Before emitting a remote launch prompt, build a profile-specific incident
+coverage matrix. For every applicable incident, name the canonical fix commit,
+behavioral regression receipt, consuming launcher/profile, and launch-bundle
+evidence. Generic permission to debug, a warning to monitor collectives, or a
+reference to "the same steps as an earlier prompt" is not coverage. A prompt
+must be self-contained, and a known incident that lacks executable coverage in
+the supplied commit blocks delegation.
 
 ## Manifest contract
 

@@ -756,3 +756,7 @@
   repairs, uncertain deltas, unapproved scientific changes, tests that were not
   run on the candidate, or a commit unavailable from the canonical remote all
   block the next related prompt.
+## 2026-09-02 Provisional remote-causality and prompt-coverage gate
+
+- Clarified that unfinished remote attempts provide observations and hypotheses, not certified root causes or repairs. Incident records now separate observed evidence, causal confidence, candidate remedy, and acceptance result; combined retries cannot identify the causal sub-change without differential evidence.
+- Added a profile-specific pre-prompt incident coverage matrix. Monitoring language, broad repair authority, and references to earlier prompts do not count as coverage; every known applicable incident must map to canonical executable code, a behavioral regression receipt, the consuming profile, and an immutable launch bundle.
