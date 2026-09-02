@@ -90,6 +90,17 @@ fresh matching evidence for any expensive property that cannot be tested
 locally. Remote semantics-preserving repair authority is an emergency safety
 net, not the planned development or integration loop.
 
+Before release, perform an ambient-dependency subtraction audit against the
+latest successful command: assume the remote Agent receives only the immutable
+checkout, launch bundle, site bootstrap, and one launch command. Any required
+hostfile, scheduler variable, proxy/auth presence check, communication-library
+selection, shell option, or environment export that exists only in prose, the
+interactive parent, or an earlier prompt is a launcher defect. Encode it in the
+appropriate site adapter or node wrapper, serialize its non-secret identity in
+the launch bundle/runtime record, and cover its propagation with a behavioral
+test. Keep backend-neutral launchers configurable; a proven site requirement
+belongs in the site profile rather than being left as a manual prompt step.
+
 Unless the user explicitly requests discussion or a draft, a request for an
 executable multi-node prompt is also a request to finish and release the code,
 config, launcher, and launch bundle. Before writing the prompt, reconcile the

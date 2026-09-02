@@ -193,3 +193,9 @@ non-secret environment, assets, topology, contract hashes, runtime commit, and
 launcher digest. The remote prompt then carries the bundle path/hash, target
 identity, one bootstrap command, repair authority, and success lifecycle instead
 of duplicating stable launch details in prose.
+
+As a final one-shot check, subtract the prompt prose: reconstruct the launch
+from the candidate checkout, site bootstrap, launch bundle, and single command.
+Compare that environment and argv with the latest sustained-success runtime.
+Any required operational delta that survives only in prose or ambient parent
+state invalidates the bundle until it is encoded and behaviorally tested.

@@ -237,6 +237,13 @@ must also work without one when the allocation probe proves that behavior. Do
 not default to one MPI process per GPU until direct MPI-to-training rank,
 signal, FSDP, and application environment semantics have been tested.
 
+"Optional in the backend-neutral adapter" does not override site evidence. If
+a platform's successful allocations require a hostfile path, scheduler flag,
+or launcher environment variable, freeze and validate that requirement in the
+site adapter and immutable runtime handoff. Test that the final durable child
+receives it. Do not rely on an operator, Goal prompt, login shell, or tmux
+parent to export it manually.
+
 ## Rendezvous and launch
 
 - Resolve the master through the cluster's private network.
