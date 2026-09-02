@@ -17,6 +17,7 @@ A successful `torchrun` command is not proof that all three contracts are correc
 
 - Read [topology-and-semantics.md](references/topology-and-semantics.md) before changing world size, parallelism, batching, gradient accumulation, sampling groups, or checkpoint code.
 - Read [reliable-launch.md](references/reliable-launch.md) before writing a launcher, supervisor, remote-agent prompt, asset preparation flow, or recovery policy.
+- Read [production-runtime-promotion.md](references/production-runtime-promotion.md) before branching a new distributed algorithm/profile or reusing fixes from accepted remote attempts.
 - Read [diagnostics.md](references/diagnostics.md) when a job hangs, one node diverges, throughput regresses, metrics disagree, or startup does not reach training.
 - Read [source-notes.md](references/source-notes.md) when refreshing the skill or checking which rules come from PyTorch, Accelerate, DeepSpeed, Megatron-LM, Hugging Face Hub, or NCCL.
 
@@ -96,6 +97,12 @@ common launcher/runtime and run its regressions before freezing the new
 profile. A non-descendant accepted commit is a signal to port or reimplement
 the verified fixes, not a reason to ignore them. The handoff is not one-shot
 ready while known production fixes exist only in detached remote attempts.
+Persist this state in a repository-owned production-runtime manifest and run
+`scripts/validate_production_runtime.py` for the candidate profile before
+delegation. The manifest and validator workflow are defined in
+[production-runtime-promotion.md](references/production-runtime-promotion.md).
+Do not treat a passing feature test suite as a substitute for this promotion
+gate; it answers a different question.
 
 ## Keep cluster launch backends replaceable
 

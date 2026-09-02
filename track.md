@@ -720,3 +720,20 @@
   non-descendant production commit must have its still-applicable operational
   delta ported and regression-tested; ancestry mismatch does not justify
   discarding verified fixes or delegating their rediscovery to the GPU Agent.
+
+## 2026-09-02 - Close instruction learning and code promotion separately
+
+- Review of two new multi-node video profiles showed that remote incident
+  lessons had reached skills and progress notes while their executable fixes
+  remained in detached/non-descendant attempts. New feature branches therefore
+  passed local feature suites but rediscovered known production failures.
+- The workflow now tracks `SkillAbsorbed` separately from `CodePromotion`.
+  Distributed profiles require a repository-owned production-runtime manifest
+  mapping each applicable fix to source evidence, canonical promotion commit,
+  behavioral regression, and consuming profiles. A new validator fails closed
+  on missing promotion ancestry, regressions, profile fix declarations, dirty
+  release state, or science-contract mismatch.
+- Contract-driven feature development now receives that manifest in the fresh
+  implementation and review handoff, preventing a clean-context Agent from
+  unknowingly branching from stale main or treating remote integration as part
+  of the launch phase.

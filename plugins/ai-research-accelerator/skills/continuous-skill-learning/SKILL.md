@@ -34,6 +34,16 @@ commits, tests, and W&B. Mark `Reviewed` after triage (`no reusable change` is
 valid), and mark `Absorbed` only after the canonical skill is corrected,
 synchronized, validated, and its commit recorded.
 
+Track instruction learning and executable repair promotion separately. For an
+incident caused by repository code, launcher logic, or a deterministic script,
+use at least `SkillAbsorbed` and `CodePromotion` states. `SkillAbsorbed` means
+the reusable decision rule is canonical; it does not mean the affected product
+code contains the repair. Mark `CodePromotion=complete` only after the fix is
+in the canonical repository, covered by a behavioral regression, included in
+the next applicable release/base manifest, and validated there. If code work is
+outside the current scope, record `CodePromotion=pending` and block claims that
+the operational loop is closed.
+
 Be critical in both directions: question whether the existing workflow or skill
 guidance contributed to the incident, and challenge every new retrospective
 claim before organically integrating only its evidence-backed portion; neither
@@ -92,6 +102,12 @@ validator, preflight, schema check, or regression test instead of relying only
 on prose. Tests should exercise behavior or invariants, not merely assert that
 a sentence exists. Do not build automation for a low-confidence or one-off
 lesson.
+
+For delegated runtime incidents, mechanize the boundary between remote evidence
+and the next release: maintain a repository-owned promotion manifest (or an
+equivalent release record) that maps each applicable incident fix to its source
+evidence, canonical promotion commit, behavioral regression, and consuming
+profiles. A retrospective index alone is not a release gate.
 
 For code-backed skills, review both instructions and their scripts: correcting
 documentation while leaving a conflicting implementation is incomplete.

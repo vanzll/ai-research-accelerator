@@ -22,6 +22,9 @@ that contains only what a fresh Agent needs:
 
 - the objective and explicit non-goals;
 - the frozen base commit and authoritative implementation references;
+- for runtime/backend/algorithm work, the latest accepted production-runtime
+  manifest, its canonical base commit, applicable promoted fixes, and any
+  explicitly pending incident repair;
 - existing behavior and scientific or compatibility invariants that must not
   change;
 - allowed ownership boundaries, expected feature switch, and any shared paths
@@ -32,6 +35,14 @@ that contains only what a fresh Agent needs:
 Keep the contract short enough to inspect quickly. Do not perform broad code
 archaeology by default. Expand investigation only when code, tests, and known-good
 evidence contradict one another.
+
+Do not choose a stale repository `main` merely because it is easy to branch.
+When accepted runs used detached or non-descendant runtime commits, the
+coordinator first audits and promotes their applicable operational deltas into
+the canonical base. New feature implementation starts only after the production
+runtime gate passes. If that promotion is intentionally deferred, it is a
+declared blocker rather than work silently delegated to the implementation or
+training-node Agent.
 
 ## Delegate implementation to a fresh context
 
@@ -60,8 +71,10 @@ The reviewer checks, in this order:
 1. algorithm or domain semantics against the contract and references;
 2. regressions in frozen behavior and default-off feature isolation;
 3. changes to shared paths, ownership boundaries, and runtime contracts;
-4. whether tests exercise the failure-prone behavior and realistic topology;
-5. remaining evidence gaps.
+4. whether the candidate contains every applicable promoted production fix and
+   the feature did not regress its behavioral test;
+5. whether tests exercise the failure-prone behavior and realistic topology;
+6. remaining evidence gaps.
 
 Report findings first with concrete file references. The implementation Agent
 addresses findings; the reviewer does not silently redefine the contract.
@@ -70,7 +83,8 @@ addresses findings; the reviewer does not silently redefine the contract.
 
 The main thread resolves contract questions, confirms material review findings
 are closed, and runs the smallest sufficient acceptance set: targeted new-feature
-tests, frozen-path regressions, and one real smoke only when hardware,
+tests, production-incident regressions, frozen-path regressions, the
+production-runtime manifest validator, and one real smoke only when hardware,
 distributed, or external-service behavior cannot be validated locally. Avoid
 duplicated reviews and repeated smoke runs without a changed contract.
 
