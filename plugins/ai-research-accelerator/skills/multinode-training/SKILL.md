@@ -1,6 +1,6 @@
 ---
 name: multinode-training
-description: Design, implement, launch, audit, and debug reliable multi-node GPU training. Use for torchrun, Accelerate, DeepSpeed, DDP, FSDP, tensor or sequence parallel jobs; distributed RL pipelines with rollout or reward services; cluster launchers, topology changes, collective hangs, asset staging, checkpointing, and send-and-forget experiment queues.
+description: Design, implement, launch, audit, and debug reliable multi-node GPU training. Use for torchrun, Accelerate, DeepSpeed, DDP, FSDP, tensor or sequence parallel jobs; distributed RL pipelines with rollout or reward services; cluster launchers, topology changes, collective hangs, asset staging, checkpointing, send-and-forget experiment queues, and requests for a remote Node0 Goal prompt or distributed launch command.
 ---
 
 # Multinode Training
