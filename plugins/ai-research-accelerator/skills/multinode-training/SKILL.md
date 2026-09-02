@@ -89,6 +89,14 @@ fresh matching evidence for any expensive property that cannot be tested
 locally. Remote semantics-preserving repair authority is an emergency safety
 net, not the planned development or integration loop.
 
+Before branching a new algorithm or experiment profile, identify the latest
+accepted production runtime and review its retrospective and exact operational
+delta. Promote every still-applicable, semantics-preserving repair into the
+common launcher/runtime and run its regressions before freezing the new
+profile. A non-descendant accepted commit is a signal to port or reimplement
+the verified fixes, not a reason to ignore them. The handoff is not one-shot
+ready while known production fixes exist only in detached remote attempts.
+
 ## Keep cluster launch backends replaceable
 
 Separate the backend-neutral node runner from allocation launch adapters. The

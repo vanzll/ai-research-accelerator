@@ -708,3 +708,15 @@
   `SUSTAINED_TRAINING_VALIDATED_AND_RUNNING`. Deadlock monitoring uses rank-aware
   phase and collective evidence rather than W&B `_step` alone, and successful
   handoff still leaves the trainer running.
+
+## 2026-09-02 - Promote accepted remote runtime fixes before new profiles
+
+- Two new video-policy profiles repeatedly rediscovered KCCL probe teardown,
+  SAGE checkout, hostname-based transport attestation, SP reward routing, and
+  rollout-boundary issues that had already appeared in accepted or reviewed
+  remote attempts. Their feature commits were based on main without first
+  promoting the detached production-runtime fixes.
+- `multinode-training` now makes accepted-runtime review a pre-branch gate. A
+  non-descendant production commit must have its still-applicable operational
+  delta ported and regression-tested; ancestry mismatch does not justify
+  discarding verified fixes or delegating their rediscovery to the GPU Agent.
