@@ -139,11 +139,13 @@ retrospective capture unexpected environment failures, but they are not the
 default implementation or debugging strategy.
 
 Unless the user explicitly asks only for discussion or a draft, asking for an
-experiment prompt includes finishing the code/config/launcher, incrementally
-reconciling new `踩坑记录/` entries, promoting applicable repairs with behavioral
-regressions, validating an already certified production runtime, committing and
-pushing the candidate, and generating an immutable launch bundle. Emit the
-prompt only for that remotely reachable full commit and bundle hash.
+experiment prompt requires a completed `multinode-training` release-gate
+receipt: a remotely reachable full commit, incrementally reconciled incident
+watermark, complete applicable code promotion, passing production/science
+validators, and immutable launch-bundle hash. This skill records and consumes
+that receipt in the experiment ledger; it does not rerun the code-promotion
+audit, feature review, or bundle construction. Emit no prompt while the receipt
+is missing, stale, or references `CodePromotion=pending`.
 
 Choose one orchestration mode before launch:
 

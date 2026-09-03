@@ -15,6 +15,25 @@ cross-module behavior, changes to shared training/runtime paths, or work whose
 failure could silently alter scientific results. Handle small, local,
 well-covered edits directly.
 
+Split mixed requests by risk before delegation. A small profile or parameter
+change must not inherit the full workflow merely because the same request also
+contains an independent backend or algorithm integration. Give each separable
+risk unit its own focused candidate, tests, and review boundary.
+
+## Own only the feature gate
+
+This skill owns the **feature gate**: scientific/domain semantics, compatibility,
+implementation, and focused review. The applicable domain skill owns any
+production-base certification and final release/launch gate. Consume its current
+certificate; do not independently repeat incident archaeology, launcher
+publication, bundle generation, or remote acceptance here.
+
+Before implementation, establish only the interfaces, invariants, and
+behavior-level tests needed to make the feature correct. Do not generate final
+release hashes, launch bundles, experiment identities, or deployment evidence
+while the implementation is still changing. Produce those once, after the
+candidate passes the feature gate.
+
 ## Freeze a concise contract
 
 The main thread is the coordinator. Before delegation, write a compact handoff
@@ -37,12 +56,12 @@ archaeology by default. Expand investigation only when code, tests, and known-go
 evidence contradict one another.
 
 Do not choose a stale repository `main` merely because it is easy to branch.
-When accepted runs used detached or non-descendant runtime commits, the
-coordinator first audits and promotes their applicable operational deltas into
-the canonical base. New feature implementation starts only after the production
-runtime gate passes. If that promotion is intentionally deferred, it is a
-declared blocker rather than work silently delegated to the implementation or
-training-node Agent.
+For runtime/backend/algorithm work, require the production-base certificate from
+the owning domain skill before branching. If new incidents invalidate it, let
+that owner incrementally promote the applicable operational deltas and issue a
+new certificate. Do not duplicate that audit inside this workflow. If promotion
+is intentionally deferred, it is a declared blocker rather than work silently
+delegated to the implementation or training-node Agent.
 
 ## Delegate implementation to a fresh context
 
@@ -79,14 +98,21 @@ The reviewer checks, in this order:
 Report findings first with concrete file references. The implementation Agent
 addresses findings; the reviewer does not silently redefine the contract.
 
+Use one independent review of the stable candidate. After localized fixes,
+verify the reported findings and affected regressions; do not restart an
+unbounded full review unless the contract, architecture, or frozen behavior
+changed materially.
+
 ## Integrate in the main thread
 
 The main thread resolves contract questions, confirms material review findings
 are closed, and runs the smallest sufficient acceptance set: targeted new-feature
-tests, production-incident regressions, frozen-path regressions, the
-production-runtime manifest validator, and one real smoke only when hardware,
-distributed, or external-service behavior cannot be validated locally. Avoid
-duplicated reviews and repeated smoke runs without a changed contract.
+tests and frozen-path regressions. Reuse the owning domain skill's valid
+production-base certificate rather than rerunning its audit. The final release
+gate may add the production-runtime validator and one real smoke only when
+hardware, distributed, or external-service behavior cannot be validated
+locally. Avoid duplicated reviews, repeated full suites, and repeated smoke runs
+without a changed contract or invalidated certificate.
 
 Do not claim this workflow was completed when fresh contexts were unavailable.
 A fresh Agent is context-isolated, not context-free: omitting the contract or

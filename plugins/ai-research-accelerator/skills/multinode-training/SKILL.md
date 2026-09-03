@@ -21,9 +21,38 @@ A successful `torchrun` command is not proof that all three contracts are correc
 - Read [diagnostics.md](references/diagnostics.md) when a job hangs, one node diverges, throughput regresses, metrics disagree, or startup does not reach training.
 - Read [source-notes.md](references/source-notes.md) when refreshing the skill or checking which rules come from PyTorch, Accelerate, DeepSpeed, Megatron-LM, Hugging Face Hub, or NCCL.
 
+## Separate base, feature, and release gates
+
+Preserve reliability without doing release work while code is still moving:
+
+1. **Base gate:** before related implementation, validate the current
+   production-runtime certificate. Inspect only incident-index records newer
+   than its watermark. Promote every applicable operational repair into the
+   canonical base with a behavioral regression, then issue a new certificate.
+   If the certificate remains valid and there are no new records, do not reread
+   old incidents, reconstruct old diffs, or rerun the full promotion audit.
+2. **Feature gate:** freeze the computation/science invariants affected by the
+   change, implement the smallest candidate, and run targeted semantic,
+   incident, and frozen-path regressions. For substantial algorithm or backend
+   work, `contract-driven-feature-development` owns implementation and review.
+   Do not generate final launch bundles, hashes, experiment identities, or
+   remote acceptance artifacts until this gate is stable.
+3. **Release gate:** only after the feature gate passes and an executable launch
+   or prompt is actually requested, cheaply recheck for incidents created during
+   development, run the final production/science validators and selected full
+   regression set once, freeze the launcher and bundle, commit, push, and emit
+   the prompt. Repeat this gate only when code, contract, incident generation,
+   certificate inputs, or release artifacts changed.
+
+The incremental incident and code-promotion gate is mandatory; separating the
+stages removes duplicate work, not evidence. Do not claim readiness while an
+applicable `CodePromotion=pending` repair exists.
+
 ## Establish a frozen run contract
 
-Before editing code or allocating GPUs, write down and mechanically validate:
+Before changing computation semantics, freeze the relevant computation/science
+subset below. Before allocating GPUs or releasing the final launcher, complete
+and mechanically validate the full run contract:
 
 - experiment ID, attempt, launch nonce, exact commit, repository cleanliness, and config hash;
 - ordered host list, expected hostname per node, `nnodes`, `nproc_per_node`, node ranks, world size, master address, and port;
@@ -102,22 +131,23 @@ test. Keep backend-neutral launchers configurable; a proven site requirement
 belongs in the site profile rather than being left as a manual prompt step.
 
 Unless the user explicitly requests discussion or a draft, a request for an
-executable multi-node prompt is also a request to finish and release the code,
-config, launcher, and launch bundle. Before writing the prompt, reconcile the
-repository-root `踩坑记录/` incident index, promote all applicable prior repairs,
-run the production-runtime and science-contract gates, commit the candidate,
-and push it to the authorized canonical remote. The prompt must name that
-reachable full commit and the exact tested launch-bundle hash. Do not hand out a
-speculative command and plan for the remote Goal Agent to perform ordinary
-integration.
+executable multi-node prompt enters the release gate above: finish and release
+the code, config, launcher, and launch bundle; incrementally reconcile the
+repository-root `踩坑记录/` index; promote all applicable repairs; run the final
+production-runtime and science-contract gates once; commit and push. The prompt
+must name that reachable full commit and the exact tested launch-bundle hash.
+Do not hand out a speculative command or repeat unchanged base/feature audits
+while assembling the prompt.
 
-Before branching a new algorithm or experiment profile, identify the latest
-accepted production runtime and review its retrospective and exact operational
-delta. Promote every still-applicable, semantics-preserving repair into the
-common launcher/runtime and run its regressions before freezing the new
-profile. A non-descendant accepted commit is a signal to port or reimplement
-the verified fixes, not a reason to ignore them. The handoff is not one-shot
-ready while known production fixes exist only in detached remote attempts.
+At the Base Gate, reuse a valid production-runtime certificate. Only when that
+certificate is missing or invalidated, or the incident generation advanced,
+identify the affected accepted runtime and review the new retrospective and
+exact operational delta. Promote every still-applicable, semantics-preserving
+repair into the common launcher/runtime and run its regressions before freezing
+the new profile. A non-descendant accepted commit is a signal to port or
+reimplement the verified fixes, not a reason to ignore them. The handoff is not
+one-shot ready while known production fixes exist only in detached remote
+attempts.
 Persist this state in a repository-owned production-runtime manifest and run
 `scripts/validate_production_runtime.py` for the candidate profile before
 delegation. The manifest and validator workflow are defined in
@@ -136,11 +166,11 @@ the behavior, and test-file existence does not prove the regression passed.
 Avoid repeating this full audit for unchanged history. Certify a production
 runtime against an incident-index generation, executable tree hash, manifest
 hash, validator version, regression receipt, and science baseline. A routine
-profile may reuse that certificate and inspect only newer records. Invalidate
+profile must reuse that certificate and inspect only newer records. Invalidate
 it when the runtime/launcher/dependency tree, manifest/schema, science baseline,
-or applicable incident generation changes. Always recheck dynamic facts such as
-host identity, capacity, ports, disk, active processes, reservations, and W&B
-identity.
+or applicable incident generation changes. Dynamic facts such as host identity,
+capacity, ports, disk, active processes, reservations, and W&B identity belong
+to the final preflight, not repeated feature-development audits.
 
 ## Keep cluster launch backends replaceable
 

@@ -1,5 +1,22 @@
 # Development Track
 
+## 2026-09-03: Separate feature development from multi-node release assurance
+
+- Refined the development and experiment-launch workflow after a mixed
+  FlowART/DanceGRPO task spent substantial time repeatedly generating and
+  validating release artifacts before the algorithm candidates were stable.
+- `multinode-training` now owns three explicit stages: an incremental
+  incident-aware Base Gate, a semantics-focused Feature Gate, and a single final
+  Release Gate. Incident code promotion and its watermark remain mandatory.
+- `contract-driven-feature-development` now owns only implementation semantics
+  and focused independent review, routes separable small and large changes by
+  risk, and avoids repeated full reviews or release work for unchanged inputs.
+- `manage-paper-experiments` now consumes the multi-node release receipt instead
+  of duplicating incident promotion, feature review, and bundle construction.
+- The intended effect is lower latency without weaker correctness: algorithm
+  regressions remain in the Feature Gate, known operational repairs remain in
+  the Base Gate, and launcher/bundle validation remains in the Release Gate.
+
 ## 2026-08-31: Harden pinned patch publication
 
 - Extended `multinode-training` after a successful four-node recovery exposed
