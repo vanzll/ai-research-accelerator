@@ -792,3 +792,37 @@
 
 - Clarified that unfinished remote attempts provide observations and hypotheses, not certified root causes or repairs. Incident records now separate observed evidence, causal confidence, candidate remedy, and acceptance result; combined retries cannot identify the causal sub-change without differential evidence.
 - Added a profile-specific pre-prompt incident coverage matrix. Monitoring language, broad repair authority, and references to earlier prompts do not count as coverage; every known applicable incident must map to canonical executable code, a behavioral regression receipt, the consuming profile, and an immutable launch bundle.
+
+## 2026-09-03 - Review executable code before signing release artifacts
+
+- A multi-profile training change reached signed launch bundles before final
+  review found two undefined post-update variables and an under-specified
+  sustained-run verifier. Correcting the source then forced every dependent
+  bundle and production-manifest hash to be regenerated.
+- `contract-driven-feature-development` now places the fresh review at the
+  stable code-candidate boundary, before release hashes or bundles. Shared-core
+  changes must first pass static/compile checks, consequential post-update path
+  tests, and one frozen behavioral regression per affected algorithm family.
+- Release generation is now a deterministic integrity stage. Any later source
+  or contract edit invalidates the artifacts and returns the candidate to the
+  feature gate; localized review fixes require focused verification rather than
+  an unbounded repeat of the full workflow.
+
+## 2026-09-03 - Center the plugin on cross-agent learning, not coding procedure
+
+- Auditing the active workflow found that routine prompt requests were being
+  upgraded into production-certificate, incident-audit, bundle-signing,
+  independent-review, and broad-regression projects. Four entrypoint skills
+  contained 1,000+ lines before conditional references were loaded.
+- `contract-driven-feature-development`, `multinode-training`,
+  `manage-paper-experiments`, and `continuous-skill-learning` now total 418
+  lines. They route routine profile changes, new algorithms/shared paths, and
+  real runtime incidents separately; routine experiments reuse matching runtime
+  evidence and do not invent release artifacts.
+- Independent review is off by default. At most one fresh reviewer is justified
+  when the user asks, a new algorithm/backend can fail silently, or an observed
+  runtime incident required shared-core repair.
+- The retained core is the asynchronous Agent loop: local code/commit/command,
+  remote Goal execution and bounded operational repair, a repository-root
+  `踩坑记录/` record with evidence and Git delta, then incremental critical
+  verification and canonical code absorption before the next related prompt.

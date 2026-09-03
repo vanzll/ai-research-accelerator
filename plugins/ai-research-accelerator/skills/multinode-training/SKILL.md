@@ -1,401 +1,153 @@
 ---
 name: multinode-training
-description: Design, implement, launch, audit, and debug reliable multi-node GPU training. Use for torchrun, Accelerate, DeepSpeed, DDP, FSDP, tensor or sequence parallel jobs; distributed RL pipelines with rollout or reward services; cluster launchers, topology changes, collective hangs, asset staging, checkpointing, send-and-forget experiment queues, and requests for a remote Node0 Goal prompt or distributed launch command.
+description: Design, launch, and debug reliable multi-node GPU training, including distributed RL, torchrun, MPI, DDP/FSDP, model parallelism, remote Goal prompts, and recovery from collective or lifecycle failures.
 ---
 
 # Multinode Training
 
-Treat multi-node training as a distributed system with three separate contracts:
+Treat a distributed run as three contracts:
 
-1. the computation contract: parallel dimensions, batch semantics, collectives, and optimizer equivalence;
-2. the control-plane contract: node identity, rendezvous, process ownership, barriers, failure propagation, and recovery;
-3. the dependency contract: code, model assets, data, local services, logs, checkpoints, and external trackers.
+1. computation: parallel dimensions, batch/group semantics, collectives, and
+   optimizer equivalence;
+2. control plane: rank identity, rendezvous, process ownership, failure
+   propagation, and cleanup;
+3. dependencies: exact code, assets, environment, logs, checkpoints, and
+   trackers.
 
-A successful `torchrun` command is not proof that all three contracts are correct.
+This skill preserves non-obvious distributed invariants and Agent handoffs. It
+does not prescribe ordinary single-Agent coding technique.
 
-## Load only the needed references
+## Load details only when needed
 
-- Read [topology-and-semantics.md](references/topology-and-semantics.md) before changing world size, parallelism, batching, gradient accumulation, sampling groups, or checkpoint code.
-- Read [reliable-launch.md](references/reliable-launch.md) before writing a launcher, supervisor, remote-agent prompt, asset preparation flow, or recovery policy.
-- Read [production-runtime-promotion.md](references/production-runtime-promotion.md) before branching a new distributed algorithm/profile or reusing fixes from accepted remote attempts.
-- Read [diagnostics.md](references/diagnostics.md) when a job hangs, one node diverges, throughput regresses, metrics disagree, or startup does not reach training.
-- Read [source-notes.md](references/source-notes.md) when refreshing the skill or checking which rules come from PyTorch, Accelerate, DeepSpeed, Megatron-LM, Hugging Face Hub, or NCCL.
+- Read [topology-and-semantics.md](references/topology-and-semantics.md) when
+  changing world size, DP/FSDP/HSDP/SP/TP, batch, accumulation, or sample groups.
+- Read [reliable-launch.md](references/reliable-launch.md) when creating or
+  repairing a launcher, supervisor, environment boundary, GPU lease, or remote
+  Goal prompt.
+- Read [production-runtime-promotion.md](references/production-runtime-promotion.md)
+  only when a real remote incident produced a code repair that must be promoted.
+- Read [diagnostics.md](references/diagnostics.md) only when diagnosing a hang,
+  crash, throughput regression, or metric disagreement.
 
-## Separate base, feature, and release gates
+## Route for speed
 
-Preserve reliability without doing release work while code is still moving:
+Choose the smallest route that matches the change.
 
-1. **Base gate:** before related implementation, validate the current
-   production-runtime certificate. Inspect only incident-index records newer
-   than its watermark. Promote every applicable operational repair into the
-   canonical base with a behavioral regression, then issue a new certificate.
-   If the certificate remains valid and there are no new records, do not reread
-   old incidents, reconstruct old diffs, or rerun the full promotion audit.
-2. **Feature gate:** freeze the computation/science invariants affected by the
-   change, implement the smallest candidate, and run targeted semantic,
-   incident, and frozen-path regressions. For substantial algorithm or backend
-   work, `contract-driven-feature-development` owns implementation and review.
-   Do not generate final launch bundles, hashes, experiment identities, or
-   remote acceptance artifacts until this gate is stable.
-3. **Release gate:** only after the feature gate passes and an executable launch
-   or prompt is actually requested, cheaply recheck for incidents created during
-   development, run the final production/science validators and selected full
-   regression set once, freeze the launcher and bundle, commit, push, and emit
-   the prompt. Repeat this gate only when code, contract, incident generation,
-   certificate inputs, or release artifacts changed.
+### Routine experiment or parameter/profile change
 
-The incremental incident and code-promotion gate is mandatory; separating the
-stages removes duplicate work, not evidence. Do not claim readiness while an
-applicable `CodePromotion=pending` repair exists.
+Reuse the latest successful launcher and runtime when their relevant inputs are
+unchanged. Freeze the intended scientific delta, run focused config/launcher
+checks, commit and push the exact code, then emit the launch command or remote
+prompt. Do not recreate production certificates, asset inventories, transport
+probes, launch bundles, or broad regressions merely because a new experiment ID
+or parameter changed.
 
-## Establish a frozen run contract
+### New algorithm, backend, or shared distributed path
 
-Before changing computation semantics, freeze the relevant computation/science
-subset below. Before allocating GPUs or releasing the final launcher, complete
-and mechanically validate the full run contract:
+Freeze a concise semantic contract and test the affected behavior and existing
+callers. Compose with `contract-driven-feature-development`. Independent review
+is optional by default and limited to one reviewer when the user requests it,
+the new algorithm can silently violate its reference semantics, or a real
+runtime incident required shared-core repair.
 
-- experiment ID, attempt, launch nonce, exact commit, repository cleanliness, and config hash;
-- ordered host list, expected hostname per node, `nnodes`, `nproc_per_node`, node ranks, world size, master address, and port;
-- every parallel dimension and the resulting data-parallel replica count;
-- local microbatch, gradient accumulation, global batch, prompt/group layout, and optimizer-step semantics;
-- model, dataset, tokenizer, reward model, and auxiliary-service asset roots plus immutable revisions or manifests;
-- checkpoint/evaluation schedule, retention, W&B identity, and success criteria;
-- placement and estimated phase-specific memory budget for applicable
-  reward/evaluation services, model decoding, rollout, backward, optimizer, and
-  checkpointing; refine it with measured representative peaks before increasing
-  a configuration to the memory limit;
-- owner and cleanup behavior for every process, port, temporary directory, and resource lease.
+### Real runtime incident
 
-Fail closed when a required value is implicit, inconsistent, or node-specific without being declared. Do not silently choose a different batch size, model path, network interface, precision, or microbatch after launch.
+Preserve the failed attempt, identify its last completed distributed stage, and
+repair the smallest cause without changing the scientific contract. Compare the
+prompt commit with the successful runtime commit and promote verified reusable
+repairs before the next related launch. Use
+`production-runtime-promotion.md` only for this route or when the repository
+already has an explicit production-promotion mechanism.
 
-Solve the topology arithmetic before choosing a node count. Check that every
-parallel degree divides the relevant world/model dimensions, semantic groups
-divide the true DP population, and the proposed microbatch fits after the
-actual SP/TP split. More GPUs do not repair an invalid mesh.
+Release artifacts such as manifests, receipts, and bundle hashes are required
+only when the repository already treats them as its launch interface or the user
+asks for them. Do not invent a release system for a routine research run.
 
-## Use proportionate launch assurance
+## Freeze only the relevant contract
 
-The stages below describe separate failure domains, not mandatory work for every launch. Run only the smallest set not already covered by fresh, matching evidence:
+Before changing science, record the fields whose meaning can change: algorithm
+and reward objective, model/data identities, sampling, batch/group and optimizer
+semantics, parallel mesh, evaluation, and checkpoints. Before launch, also bind
+the exact commit, attempt/nonce, host/rank mapping, environment, rendezvous,
+asset roots, tracker identity, process ownership, and success condition.
 
-1. **Preflight:** verify host identity, code commit, environment, free ports, storage, GPU inventory, and absence of unowned conflicting processes.
-2. **Prepare immutable assets:** one coordinator writes; workers wait and verify. Never let all ranks mutate a shared model cache.
-3. **Start node-local dependencies:** each node starts only its own reward/data services with the training rendezvous environment removed, then proves both process liveness and application readiness.
-4. **Cluster-ready barrier:** require nonce- and child-identity-bound application readiness from every expected node. A rank-0 process alone is insufficient.
-5. **Transport validation:** if the hosts, topology, network stack, or loaded communication library are new or changed, run a bounded collective with the exact topology. Otherwise verify and reuse a frozen report from repeated successful probes with matching identities.
-6. **Distributed launch:** start the same frozen command on every node with unique node rank and identical rendezvous values.
-7. **First-work validation:** persist immutable local evidence when all ranks complete one global batch or rollout and optimizer step; verify finite global metrics and tracker visibility independently. This is an early diagnostic milestone, not formal normal-running acceptance.
-8. **Sustained-progress validation:** for a delegated formal run, require at least five globally completed finite optimizer updates and evidence that the next training cycle is advancing. A tracker row or rollout counter is not optimizer-step evidence.
-9. **Durable handoff:** once sustained progress is validated, a deterministic supervisor owns monitoring, cleanup, and authorized transitions. Do not keep an agent polling.
+Fail closed on an undeclared scientific change. Operational repairs to launch,
+communication, environment, telemetry, and process lifecycle are allowed only
+while the frozen scientific values remain unchanged; uncertain changes require
+user approval and a new experiment identity.
 
-Unless the frozen contract explicitly defines a bounded smoke that must stop
-after acceptance, successful delegation means
-`SUSTAINED_TRAINING_VALIDATED_AND_RUNNING`: record both first-work and
-sustained-progress evidence, leave the trainer, tmux/supervisor, GPU lease, and
-tracker run alive, and hand monitoring to the deterministic supervisor. Agent
-or Goal completion is separate from job completion. A remote Agent must not
-send an interrupt, close the session, restore the idle GPU reservation, or
-finish/crash the tracker merely because an acceptance gate passed.
+## Prefer one master and deterministic workers
 
-Do not insert a new smoke between an already successful exact-topology smoke and a formal run unless code, assets, topology, communication stack, or algorithm semantics changed. A direct formal launch with an early first-work handshake is appropriate when matching evidence already exists. For exact marker contents, evidence reuse, asset rules, process-group cleanup, and remote prompt requirements, follow [reliable-launch.md](references/reliable-launch.md).
+Use an allocation-native launcher such as MPI or Slurm when the platform
+provides it. Otherwise use authenticated coordinator-to-worker execution such
+as SSH. Prefer one master/Node 0 Goal Agent plus deterministic node wrappers;
+worker Coding Agents are unnecessary when the coordinator can execute the
+frozen command remotely.
 
-Keep a strict complexity budget: prefer one canonical contract validator, one
-node wrapper, and one deterministic supervisor. A new gate is justified only
-when it catches a distinct expensive failure before that failure can occur.
-Do not duplicate parsers, nest smoke-to-formal promotion controllers, or add a
-watcher merely to re-prove evidence already frozen elsewhere.
+Use `shared-filesystem-agent-coordination` only when workers need independent
+Agent judgment or no direct executor exists. Do not add an Agent bus to a
+working scheduler or SSH launch path.
 
-Commit recurring preflight and consolidation logic as deterministic scripts
-with versioned result schemas. Remote Agents execute and interpret those
-scripts; they do not each improvise a parser for the same evidence. Keep
-immutable science fields separate from dynamic attempt/fencing state so a valid
-retry is not rejected by a stale hard-coded validator.
+## Preserve the local-to-remote Agent loop
 
-Treat one-shot launcher readiness as the implementation Agent's responsibility,
-not as work to defer to the training-node Coding Agent. Before handing off a
-launch command or Goal prompt, finish and freeze the node wrapper, allocation
-adapter, environment inheritance, rank mapping, process ownership, failure
-propagation, GPU lease, evidence paths, and relevant regression tests; replay
-fresh matching evidence for any expensive property that cannot be tested
-locally. Remote semantics-preserving repair authority is an emergency safety
-net, not the planned development or integration loop.
+The local coding Agent should hand off an exact reachable commit and a
+secret-free, directly executable launch command. The remote Goal Agent should
+primarily execute, observe, and keep the formal run alive. It may repair
+semantics-preserving operational failures, but it must not silently change the
+algorithm, reward, data, batch, optimizer, or evaluation contract.
 
-Before release, perform an ambient-dependency subtraction audit against the
-latest successful command: assume the remote Agent receives only the immutable
-checkout, launch bundle, site bootstrap, and one launch command. Any required
-hostfile, scheduler variable, proxy/auth presence check, communication-library
-selection, shell option, or environment export that exists only in prose, the
-interactive parent, or an earlier prompt is a launcher defect. Encode it in the
-appropriate site adapter or node wrapper, serialize its non-secret identity in
-the launch bundle/runtime record, and cover its propagation with a behavioral
-test. Keep backend-neutral launchers configurable; a proven site requirement
-belongs in the site profile rather than being left as a manual prompt step.
+Use the repository-root `踩坑记录/` index as their asynchronous communication
+medium. A remote repair record identifies the supplied commit/command, failed
+stage and evidence, successful commit/command, relevant Git delta, tests,
+science impact, and uncertainty. Before generating the next related prompt, the
+local Agent reads only records newer than its watermark, verifies material
+claims, and absorbs applicable code repairs. Compose with
+`continuous-skill-learning`; do not rely on either Agent remembering chat
+history.
 
-Unless the user explicitly requests discussion or a draft, a request for an
-executable multi-node prompt enters the release gate above: finish and release
-the code, config, launcher, and launch bundle; incrementally reconcile the
-repository-root `踩坑记录/` index; promote all applicable repairs; run the final
-production-runtime and science-contract gates once; commit and push. The prompt
-must name that reachable full commit and the exact tested launch-bundle hash.
-Do not hand out a speculative command or repeat unchanged base/feature audits
-while assembling the prompt.
+## Keep essential distributed invariants
 
-At the Base Gate, reuse a valid production-runtime certificate. Only when that
-certificate is missing or invalidated, or the incident generation advanced,
-identify the affected accepted runtime and review the new retrospective and
-exact operational delta. Promote every still-applicable, semantics-preserving
-repair into the common launcher/runtime and run its regressions before freezing
-the new profile. A non-descendant accepted commit is a signal to port or
-reimplement the verified fixes, not a reason to ignore them. The handoff is not
-one-shot ready while known production fixes exist only in detached remote
-attempts.
-Persist this state in a repository-owned production-runtime manifest and run
-`scripts/validate_production_runtime.py` for the candidate profile before
-delegation. The manifest and validator workflow are defined in
-[production-runtime-promotion.md](references/production-runtime-promotion.md).
-Do not treat a passing feature test suite as a substitute for this promotion
-gate; it answers a different question.
+- All ranks execute collectives in the same order. Rank-zero-only branches must
+  not contain collectives required by other ranks.
+- Compute global batch and semantic groups from the actual DP replicas after
+  SP/TP/FSDP placement. Preserve prompt groups on the estimator boundary.
+- Treat process existence as insufficient readiness. Bind evidence to the
+  attempt, child identity, rank/host, and expected application milestone.
+- Source and verify the site environment inside every final child shell that
+  downloads assets or starts services, probes, evaluators, or trainers. Do not
+  print or persist credentials.
+- One coordinator prepares shared assets; workers verify them. A missing
+  manifest means unverified, not necessarily missing, and should not trigger an
+  unconditional redownload.
+- Treat the loaded NCCL/KCCL or site communication library, interface, and
+  topology as runtime facts. Reuse matching successful evidence; probe only
+  when hosts, topology, library, or critical collectives changed.
+- Keep Python object metadata off NCCL-capable groups when it can stage material
+  GPU allocations; use tensor collectives for numeric payloads and a dedicated
+  Gloo group for object metadata when needed.
+- Own complete process groups and propagate failure to the whole attempt unless
+  elastic recovery was deliberately implemented.
+- Treat idle GPU reservation as a generation-fenced lease. An old attempt's
+  cleanup must not restore the hold while a successor owns the GPUs.
+- Keep science, logs, checkpoints, and failure lineage; clean only identity-
+  verified stale runtime processes and ephemeral state.
 
-Audit real Git state, not summaries. For each new incident record, compare the
-prompt commit with the sustained-success runtime commit, inspect the merge base,
-commit list, changed paths, and relevant patch, and classify every delta. Port
-semantics-preserving operational repairs with behavioral regressions; do not
-merge a mixed remote branch wholesale. A docs-only descendant is not the
-runtime commit, ancestry alone does not prove a later candidate still contains
-the behavior, and test-file existence does not prove the regression passed.
+## Launch and accept proportionately
 
-Avoid repeating this full audit for unchanged history. Certify a production
-runtime against an incident-index generation, executable tree hash, manifest
-hash, validator version, regression receipt, and science baseline. A routine
-profile must reuse that certificate and inspect only newer records. Invalidate
-it when the runtime/launcher/dependency tree, manifest/schema, science baseline,
-or applicable incident generation changes. Dynamic facts such as host identity,
-capacity, ports, disk, active processes, reservations, and W&B identity belong
-to the final preflight, not repeated feature-development audits.
+Use existing matching evidence whenever possible. A routine launch normally
+needs only current host/capacity checks, exact checkout/environment validation,
+and the formal command. Run an exact-topology transport smoke only when relevant
+transport inputs changed or no matching evidence exists.
 
-## Keep cluster launch backends replaceable
+Persist rank-prefixed logs and enough phase evidence to distinguish launcher,
+collective, rollout, reward, backward, optimizer, tracker, and cleanup failures.
+For a delegated formal run, do not declare normal operation from the first W&B
+row or first update. Require at least five finite global optimizer updates and
+evidence that a later cycle is advancing, then leave the trainer, durable
+supervisor, tracker, and GPU lease running unless the user explicitly requested
+a bounded smoke.
 
-Separate the backend-neutral node runner from allocation launch adapters. The
-node runner consumes an explicit node rank, node count, local GPU count, master
-address/port, and frozen training command. Thin adapters translate platform
-state into that contract, for example MPI, Slurm, direct SSH, or a Kubernetes
-operator. Do not put hostfiles, scheduler variables, site paths, or hard-coded
-hosts into the scientific launcher.
-
-Prefer an allocation-native launcher after a bounded no-GPU allocation probe
-proves the expected hosts, slots, rank mapping, and remote execution. On an MPI
-allocation, start one foreground wrapper per node and let each wrapper start the
-existing local `torchrun`; use no CPU binding unless a validated policy is
-explicitly configured. Keep hostfiles optional because scheduler-integrated MPI
-may already know the allocation. Do not make direct `mpirun -np <world> python`
-the default until rank/environment/signal behavior has separate evidence.
-
-Select the backend explicitly; do not guess from whichever executable happens
-to be installed. Priority is: verified allocation-native launcher, authenticated
-coordinator-to-worker execution, then an Agent bus. When the user requests a
-remote launch prompt, provide one self-contained master/Node 0 Goal prompt that
-runs the frozen adapter through sustained-progress validation, not merely the
-first tracker row or first optimizer step. State the postcondition explicitly:
-after at least five globally completed finite optimizer updates and evidence of
-continued progress, formal training remains running under its durable
-supervisor unless the user requested a bounded smoke. Worker Agents are
-unnecessary for deterministic node wrappers.
-
-## AI-assisted repair and node collaboration
-
-Before introducing an Agent bus, run a bounded authenticated remote-execution
-probe from the coordinator to every worker. If the coordinator can execute the
-frozen node-local commands through SSH, a scheduler, or another approved remote
-executor, prefer one coordinator plus deterministic worker supervisors. Use a
-multi-Agent bus only when workers need independent Agent judgment or no direct
-executor is available.
-
-For a fixed allocation with direct execution, give only Node 0 a Goal prompt.
-Freeze `node rank -> connection endpoint -> expected hostname`, have Node 0
-connect through the working endpoint and attest the returned hostname before
-each launch, and start the frozen node wrapper in a durable node-local
-supervisor. Worker nodes do not need Coding Agents. Use shared storage for
-contracts, logs, milestones, and terminal evidence, not as a message bus.
-
-The Node 0 prompt identifies the root incident index and the attempt's incident
-record. If emergency repair is needed, Node 0 records the original prompt
-commit/command, failed attempts, successful runtime commit/command, exact Git
-delta, validation, science impact, and any later docs-only record commit before
-Goal completion. Keep the control checkout that owns `踩坑记录/` separate from
-the clean detached runtime worktree used for training.
-
-Load `shared-filesystem-agent-coordination` before designing remote-Agent
-prompts, a shared-file message bus, or an autonomous repair loop. It owns the
-general coordinator/worker topology, first-mile bootstrap, request/ACK/result
-protocol, stateless worker execution, optional resume adapters, monitoring, and
-closure rules.
-
-For training, freeze a machine-readable scientific contract before granting
-repair authority. It must cover the algorithm/objective, model and reward
-identities, data and prompt protocol, batch/group and optimizer semantics,
-precision, sampling, parallel mesh, evaluation, and checkpoints. Operational
-repairs to communication, launching, environment activation, process ownership,
-telemetry, or framework compatibility are allowed only when that hash and the
-runtime semantic quantities remain unchanged. Shared repairs require a
-regression test, new commit, and new attempt/nonce; uncertain changes require
-user approval.
-
-The Node 0 Goal may own global diagnosis and semantics-preserving recovery only
-through the declared first-work gate. Deterministic supervisors own waiting and
-training processes. When an Agent bus is actually required, ordinary worker
-Agents handle bounded node-local incidents. Worker dispatchers remain alive
-across failed training attempts and terminate
-normally only after validating the exact Node 0 host and Goal thread's fenced
-`GOAL_COMPLETED` directive; attempt evidence and trainer processes remain
-attempt-scoped. Failure or idle states do not authorize dispatcher shutdown.
-Cluster readiness must bind each worker to the exact expected Agent campaign:
-canonical campaign root/ID, science-contract hash, coordinator authority,
-node/host, dispatcher process generation, and current attempt/nonce/fencing
-epoch must all match. A healthy dispatcher from an older experiment or
-campaign is unrelated and cannot satisfy readiness.
-`AGENT_BUS_READY` proves only Agent coordination. Require independent
-`NODE_LOCAL_READY`, `CLUSTER_READY`, `TRAINING_STARTED`, and
-`FIRST_WORK_VALIDATED` evidence before claiming distributed training success.
-
-Before launching a new campaign's GPU workload, have every host perform
-identity-scoped retirement cleanup for older campaigns: stop only verified old
-trainer, reward-service, Agent, supervisor, and tmux process groups; restore
-the node's idle GPU reservation policy; and remove only dead-owner ephemeral
-locks, PID files, sockets, and incomplete temporary state. Preserve experiment
-logs, markers, results, checkpoints, and immutable failure lineage. Broad
-`pkill` patterns, cache deletion, and concurrent worker mutation of shared
-evidence are forbidden. When the old Agent bus is needed to bootstrap its
-successor, validate the successor first, then clean the old campaign before
-starting the new trainer.
-
-## Non-negotiable correctness rules
-
-- All ranks must execute distributed collectives in the same order. Never put a collective checkpoint, metric reduction, or barrier inside a global-rank-zero-only branch.
-- Treat `LOCAL_RANK`, `RANK`, and `WORLD_SIZE` as runtime identities. Elastic restarts may change global ranks; do not use them as durable experiment lineage.
-- Reduce paper-facing metrics over the intended global population. A rank-0 local reward or component score is not a global training metric.
-- Preserve semantic groups such as K samples from one prompt on the same logical estimator boundary when the algorithm requires it. Do not assume a generic distributed sampler preserves group contiguity.
-- Distinguish model-sharding ranks from independent data replicas when computing global batch and sample count.
-- A checkpoint is complete only after every required rank finishes its collective portion and a final success manifest is written last.
-- A process existing is not readiness. Require a nonce- and child-identity-bound application check; use a heartbeat only when no reliable health endpoint exists.
-- A node-local service must not inherit `RANK`, `WORLD_SIZE`, `LOCAL_RANK`, `MASTER_ADDR`, `MASTER_PORT`, or equivalent training rendezvous state unless it is deliberately part of that worker group. Sanitize these variables at the service process boundary, not globally.
-- Do not preserve undeclared inherited NCCL transport variables through `${VAR:-default}` in a frozen launcher. Resolve the complete platform-approved transport contract explicitly, then verify it with a fresh probe or a matching frozen report. High GPU utilization alone does not prove useful compute.
-- Treat the loaded communication binary as part of the contract. Two libraries may report the same NCCL ABI/version while selecting radically different vendor transports. On clusters with a site NCCL/KCCL build, verify the resolved `libnccl.so` path, preload the pinned vendor library when required, and record its checksum; HCA/QP/GID tuning cannot repair the wrong implementation.
-- Treat interface, HCA, GID, and NUMA selectors as allocation-local facts. Before rendering a launcher, collect the actual GPU/fabric topology on every host and mechanically verify every selected device exists, is active, and maps to the intended network path. A validated communication-library path may be reusable; HCA names from another host or allocation are not. Never make all workers satisfy the coordinator's device names merely because the machines appear similar.
-- Prefer a one-shot adaptive fabric preflight for reusable launchers on new allocations: every node discovers its local topology, one coordinator atomically freezes an allocation contract, every worker validates its own contract slice, and a short exact-world collective verifies the selected transport before the same invocation directly enters formal training. Keep manual topology probes as a diagnostic fallback, not a routine user prerequisite. Select communication libraries only from an explicit platform allowlist; discovery must never preload an arbitrary library merely because it exists.
-- A transport probe must exercise every performance-critical formal process-group shape with its actual collective class and representative tensor size. In particular, a default-world all-reduce does not validate an FSDP shard-group all-gather, an SP all-to-all, or multiple concurrently initialized communicators. Record per-rank completion and fail if even one expected rank is absent; do not accept aggregate throughput from a different group as proof that formal training can communicate.
-- Validate the communication implementation actually mapped in every probe/trainer process, not merely an `LD_PRELOAD` or contract path. Compare `/proc/self/maps` (or the platform equivalent), path, checksum, plugin policy, and successful transport logs; reject Socket fallback, failed-RDMA messages, unexpected plugins, and environment claims that disagree with the loaded binary.
-- Freeze the discovered communication library path and checksum, socket interface, port-qualified HCA list, GID, probe parameters, and host order. Source that same per-node contract into the formal trainer and test that no legacy rank policy rewrites it after the probe; a fast preflight is meaningless if formal training silently uses different rails or a different NCCL binary.
-- Activate and verify the exact Python/launcher/import paths inside the final
-  persistent child shell. A parent-shell import or Conda activation does not
-  prove that tmux, a scheduler, or a later relay inherited the same environment.
-- Treat the user/cluster environment bootstrap as part of the launch contract.
-  Every independent child-shell boundary that prepares assets or starts a
-  downloader, dispatcher, probe, reward service, evaluator, or trainer must
-  source the declared bootstrap inside that final shell before doing work. This
-  is where site proxy, Hugging Face authentication, Python/Conda paths, and
-  communication-library settings may be established. Verify required variables
-  by presence or non-secret fingerprints; never print their values, persist
-  credentials in shared state, or rely on a parent Agent shell having sourced
-  them. After sourcing, sanitize role-inappropriate variables at the child
-  boundary as required above.
-- When a child consumes a generated shell contract such as `runtime.env`, source it with explicit export semantics (`set -a` or an equivalent structured launcher API) and test inheritance in the final process. Shell variables visible to the wrapper are not automatically environment variables visible to `torchrun`. If the site bootstrap is not nounset-safe, source it before enabling `set -u`, then enable strict mode for the owned launcher.
-- Establish an owned worker process group through a child handshake or bounded polling. Never make cleanup correctness depend on one immediate PID/PGID observation after `setsid` or a background fork.
-- Treat node-level resource hooks such as idle GPU reservation as a fenced
-  lease, not an attempt-local boolean. Acquisition publishes an owner and
-  monotonically newer generation under a node-local lock. A cleanup trap may
-  restore the idle state only if its owner/generation is still current and no
-  successor workload lease is active; a stale attempt exiting after its
-  successor must be a no-op. Keep the generation lock held until the idle-state
-  restore itself completes, so a successor cannot run its release/acquire hook
-  between ownership validation and the old attempt's delayed restore.
-  Idempotency within one trap is insufficient.
-- On any node failure, terminate the whole worker group unless the framework's elastic recovery semantics were deliberately designed and tested.
-- Preserve failed attempt evidence. Retry with a new attempt and nonce after repairing the cause; do not overwrite ambiguous lineage.
-- Before relying on frozen code on multiple nodes, prove reachability and
-  identity through the launcher's actual staging path in every distinct worker
-  credential/network domain. For Git staging, a successful local `git cat-file`
-  is insufficient; for containers, bundles, shared worktrees, or copied trees,
-  verify the corresponding immutable artifact and the wrapper's actual import
-  path.
-- Treat layered compatibility patches as executable build artifacts. Generate
-  them from real pinned checkout states, apply the complete chain to a clean
-  checkout, test the resulting behavior, and hash the final applied tree or
-  diff. When that identity changes, update and test every launcher, preparer,
-  and runtime guard that consumes it; validating only the patch producer is
-  insufficient.
-- Implement experiment-ID parsing, contract validation, and identity derivation once and test multi-digit attempts. Duplicated outer/inner validators create contradictory control planes.
-- Treat a missing manifest as "not yet verified," not "asset missing." Before any download, discover declared existing asset roots, validate compatible files against the pinned revision/index/checksums, and import or link them into the immutable layout. Download only files that are absent or invalid.
-- Record both the logical parallel mesh and its physical placement. Full-world FSDP can turn a transport mistake into per-layer cross-node stalls; compare it with node-local sharding plus cross-node replication only after transport correctness is established.
-- When scaling a working single-node FSDP recipe, freeze the intended shard
-  degree and locality explicitly. Leaving `replicate=1` unchanged while world
-  size grows silently turns node-local shard groups into full-world groups;
-  prefer an explicitly validated HSDP mesh when preserving node-local shards.
-- Treat evaluation as distributed work. If independent DP replicas redundantly
-  generate the same validation set, shard examples across DP groups while SP/TP
-  peers keep identical inputs and every collective group executes equal padded
-  wave counts; score and retain only the unique, ordered examples.
-- Do not trade throughput for serialized algorithm equivalence unless the user explicitly asks to reproduce a larger logical batch or topology with fewer resources. Otherwise preserve the fastest correct parallel execution supported by the frozen protocol.
-- Persist rank-prefixed runtime output from the first process launch. Use tensor collectives for transport measurements and structured per-rank records for diagnostics; do not use Python object collectives or interleaved multi-rank stdout as a bandwidth oracle.
-- Keep Python object metadata off NCCL-capable process groups when its
-  serialization or device staging can create material GPU allocations. Reuse a
-  group only when its backend is explicitly dedicated Gloo; ambiguous,
-  wrapper-reported, mixed, or NCCL-capable groups require a separately created
-  and cached Gloo group with the exact same members. Use tensor collectives for
-  large numeric payloads.
-- Treat process enumeration as racy: a PID may exit between discovery and
-  `/proc` inspection. `ESRCH` is an idempotent teardown no-op, but preserve any
-  evidence of an unexpected prior exit and verify that the complete owned
-  process group is empty; identity mismatches remain errors.
-- Decouple tracker startup from expensive evaluation. Immediately after tracker initialization, log a lightweight identity/telemetry row and persist its local commit evidence before starting step-zero evaluation. An evaluation-duration timeout or delayed cloud history must not be interpreted as training failure.
-
-## Asset preparation contract
-
-On shared storage, a coordinator process on the master host should run before the trainer process group exists. It should:
-
-1. acquire a single-writer lock;
-2. inspect declared existing model roots and compatible caches before downloading;
-3. verify any existing candidate against the pinned revision, index, required files, sizes, and checksums;
-4. import, hard-link, or symlink a verified candidate into the canonical immutable layout when safe;
-5. download only missing or invalid files into an attempt-scoped temporary directory;
-6. atomically publish the immutable asset directory or manifest;
-7. write a nonce-bound ready record last.
-
-Workers must only wait, then independently verify the published files. During training, use explicit local paths and offline or `local_files_only` loading. The presence of Hugging Face `blobs/` does not prove a usable `snapshots/` tree.
-
-If storage is not shared, stage the same verified manifest to every node before the cluster-ready barrier. Do not pretend a rank-0 download is visible remotely.
-
-## Low-resource equivalence is opt-in
-
-When the user explicitly requests algorithm-equivalent execution with fewer GPUs, a larger parallel logical batch may be serialized into rollout or microbatch waves while the policy and optimizer boundary remain frozen. State the equivalence target, additional wall time, and residual numerical differences before implementing it. Follow the exact invariants in [topology-and-semantics.md](references/topology-and-semantics.md).
-
-Do not enable this mode merely because GPUs are scarce. Without explicit user authorization, do not silently replace parallel execution with a slower serialized schedule.
-
-## Validation ladder and evidence reuse
-
-Use the smallest test that can expose the next class of failure:
-
-1. dependency-free config and launcher tests;
-2. one process on CPU or one GPU;
-3. one node with the final local process topology;
-4. two nodes with one small collective and node-local services;
-5. the exact full topology for one complete batch or rollout and checkpoint;
-6. the formal run.
-
-This is a diagnostic ladder, not a requirement to rerun every rung for every attempt. Record evidence identities so a later launch can reuse results only when hosts, topology, communication binary/environment, code path, and relevant assets still match.
-
-When a smoke is needed, it must preserve the formal topology and algorithm semantics. Reduce duration or data volume, not the number or ordering of distributed roles, unless that dimension is explicitly what the smoke is testing. After such a smoke passes, launch formal training directly; do not add promotion machinery whose only purpose is to re-prove the same facts.
-
-## Operate and diagnose from primary evidence
-
-Record rank-prefixed logs, per-node supervisor state, ready/failed/success records, process groups, service ports, resource use, collective phase, globally reduced metrics, checkpoint manifests, and W&B run IDs. Milestone evidence must be append-only or step-specific: a later rank exit must not overwrite proof that all ranks completed an earlier step. Classify a stall by its last completed stage before changing NCCL or training hyperparameters.
-
-For research experiments, compose with `manage-paper-experiments` for paper IDs, ledger state, W&B reconciliation, and result reporting. Compose with `long-task-relay` only when a deterministic supervisor cannot decide the next action and human or agent judgment is genuinely required.
-
-Select one agent-control mode per conversation and unresolved objective. If the
-user explicitly chooses Goal mode, do not add a relay for that same objective.
-Different nodes may use different modes under an explicit coordinator-worker
-protocol. For long waits, prefer a token-free supervisor or event-driven relay;
-use agents only for actionable diagnosis and bounded repair.
-
-## Improve this skill from failures
-
-When a real run exposes a reusable failure mode, first repair and document the immediate attempt. Then convert the lesson into the smallest general invariant, update the relevant reference, add a deterministic check when the property is mechanically testable, validate the plugin, and synchronize the local installed skill and repository source. Do not encode one cluster's aliases, paths, or scheduler as universal requirements.
+Do not make a remote Goal prompt substitute for unfinished local implementation.
+Finish the launcher as far as the available environment permits; remote repair
+authority is a fallback for real environment failures, not the planned coding
+loop.

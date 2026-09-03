@@ -1,177 +1,80 @@
 ---
 name: continuous-skill-learning
-description: Distill verified lessons from user corrections, avoidable retries, reviews, incidents, and surprising task outcomes into concise reusable Codex skills. Use automatically after evidence exposes a wrong, missing, stale, duplicated, or overly specific skill rule, or when a genuinely reusable workflow has no existing skill. Correct and prune existing skills before creating new ones.
+description: Distill verified lessons from user corrections, delegated runs, incidents, and surprising outcomes into concise reusable skills and canonical code. Use automatically when evidence exposes a reusable workflow defect; correct existing guidance before adding new rules.
 ---
 
 # Continuous Skill Learning
 
-Persist learning by improving instructions, checks, tests, and canonical skill
-sources. This is not model-weight training and does not justify changing user
-intent, scientific semantics, permissions, or unrelated code.
+Use this skill to preserve verified learning across Agents and sessions. It is
+not model training, and it must not turn every correction into a new process.
 
-## Trigger automatically
+## Run the learning loop when evidence warrants it
 
-Run a learning audit after the primary task is stable when any of these occurs:
+After the primary task is stable, perform a short learning audit when a user
+correction, avoidable retry, real runtime incident, or successful repair exposes
+a reusable decision problem. Do not interrupt urgent recovery to edit skills.
+A valid audit may conclude that no reusable change is needed.
 
-- the user corrects the Agent or explicitly identifies a mistake;
-- an avoidable Agent, launcher, workflow, or validation defect causes a retry;
-- primary evidence contradicts a skill rule or an earlier conclusion;
-- a review or test exposes a reusable missing guard;
-- a recovery method is validated and would prevent a similar future failure;
-- multiple project notes reveal the same recurring decision problem.
-
-Do not wait for the user to request reflection again. Do not interrupt urgent
-recovery merely to edit a skill: first contain or fix the incident, preserve
-evidence, then perform the audit before final handoff. A valid audit may decide
-that no skill change is warranted.
-
-## Consume delegated-run retrospectives
-
-When analyzing a W&B run, reconciling its ledger, or resuming remote training,
-read the attempt retrospective named by the run contract before the learning
-audit. Treat it as an index, not proof; verify claims against logs, code,
-commits, tests, and W&B. Mark `Reviewed` after triage (`no reusable change` is
-valid), and mark `Absorbed` only after the canonical skill is corrected,
-synchronized, validated, and its commit recorded.
+## Use one durable interaction medium
 
 For repository work, keep one discoverable incident index under the repository
-root, normally `踩坑记录/`. Attempt storage may retain large logs and runtime
-evidence, but the root index must link them; chat history and unindexed shared
-paths are not durable project memory. Do not duplicate the same incident into
-several competing ledgers.
+root, normally `踩坑记录/`. Large logs may remain on shared storage, but the root
+record links them. This index is the asynchronous conversation between the
+coding Agent that supplied a commit and the remote Goal Agent that exercised it.
 
-A code-repair record must identify both sides of the delegation: the full
-commit and secret-free launch command supplied by the prompt, the full commit
-and command that produced sustained successful execution, and any later
-documentation-only commit. It must also record the merge base, commit list,
-changed paths or diff hash, science-contract hashes, tests, evidence, and
-remaining uncertainty. Verify these fields against Git and runtime evidence;
-the remote Agent's prose is an index, not proof.
+A remote code-repair record should contain:
 
-Track instruction learning and executable repair promotion separately. For an
-incident caused by repository code, launcher logic, or a deterministic script,
-use at least `SkillAbsorbed` and `CodePromotion` states. `SkillAbsorbed` means
-the reusable decision rule is canonical; it does not mean the affected product
-code contains the repair. Mark `CodePromotion=complete` only after the fix is
-in the canonical repository, covered by a behavioral regression, included in
-the next applicable release/base manifest, and validated there. If code work is
-outside the current scope, record `CodePromotion=pending` and block claims that
-the operational loop is closed. An applicable pending repair blocks the next
-related executable prompt. A scientific or uncertain delta is not an
-operational fix merely because the retry ran successfully; reject it or require
-explicit approval under a new science contract and experiment identity.
+- supplied full commit and secret-free launch command;
+- observed failure and primary evidence;
+- successful full commit and command, when different;
+- relevant Git delta or changed paths, tests, science impact, and uncertainty.
 
-Before implementing a related feature or releasing another prompt, ingest only
-new or changed root-index records since the last reviewed generation. Classify
-each delta as `applicable-operational`, `already-present`, `obsolete`,
-`site-specific`, `uncertain`, or `scientific-change`, then update its code
-promotion state. This incremental watermark avoids rereading unchanged history
-without allowing a new remote repair to disappear from the release gate.
+Do not require fields that add no decision value for the incident. Never store
+credentials or private payloads.
 
-Be critical in both directions: question whether the existing workflow or skill
-guidance contributed to the incident, and challenge every new retrospective
-claim before organically integrating only its evidence-backed portion; neither
-defend the status quo by default nor blindly accumulate new rules.
+## Verify before absorbing
 
-Do not mark a remote hypothesis absorbed merely because its repair coincided
-with a successful retry. Leave uncertain lessons pending and preserve the
-evidence path for later runs.
+Treat remote prose as an index, not proof. Check material claims against the
+actual commit diff and the smallest relevant logs, tests, W&B history, or
+runtime evidence. Distinguish observation, hypothesis, candidate repair, and
+validated cause. A successful combined retry does not prove every included
+change was necessary.
 
-## Require evidence before learning
+Before a related implementation or prompt, read only incident records newer
+than the last reviewed watermark. Classify each new item as applicable,
+already present, obsolete, site-specific, uncertain, or scientific. Promote an
+applicable operational code repair into canonical code before asking another
+remote Agent to rediscover it. Scientific or uncertain changes require explicit
+approval rather than silent promotion.
 
-Record the incident in the current project's established progress document with
-the observed behavior, evidence paths, root cause, impact, successful repair,
-and remaining uncertainty. Never promote speculation, a single unexplained
-correlation, an external outage, or a project-specific path into a general
-rule.
+Record two independent outcomes when relevant:
 
-Read [decision-rubric.md](references/decision-rubric.md) when deciding whether
-to update, delete, relocate, or create a skill rule. Resolve conflicts against
-primary evidence and current authoritative documentation where relevant.
+- `Reviewed`: evidence was triaged, including a valid no-change result;
+- `Absorbed`: the verified instruction or code repair is present in the
+  canonical source and its focused validation passed.
 
-## Prefer correction over accumulation
+A known applicable repair that remains outside canonical code blocks a claim
+that the related executable prompt is ready. It does not require inventing a
+production certificate, bundle, or manifest when the repository does not
+already use one.
 
-Search the available skills and their canonical sources before editing.
+## Change the narrowest owner
 
-Apply a strict topic-ownership gate before selecting a target skill. Its core
-capability and trigger must directly own the failed decision or workflow; the
-incident must expose a defect in that skill's guidance or implementation.
-Incidental co-occurrence, broad technical relevance, or a lesson that could be
-useful to readers of an adjacent skill is insufficient. Do not update several
-skills from one incident unless primary evidence shows that each skill
-independently contributed a wrong or missing decision. Otherwise keep the
-lesson in the project record or update only the directly responsible skill.
+Be critical of both the existing workflow and the new retrospective. Delete or
+replace wrong guidance instead of appending contradictions. Update only the
+skill whose core responsibility made the failed decision; keep project facts in
+the project incident record. Create a new skill only for a genuinely separate,
+recurring capability.
 
-1. **Delete or replace incorrect guidance.** Do not append a contradictory
-   exception while leaving a false rule active.
-2. **Update the narrowest existing skill.** Put the invariant where an Agent
-   making that decision will load it. Consolidate duplicates into one source of
-   truth and keep references discoverable from `SKILL.md`.
-3. **Create a new skill only for a distinct reusable capability.** A new skill
-   needs a discriminating trigger and enough recurring workflow to justify
-   separate discovery. One incident, one cluster, or one repository is usually
-   not a capability.
-4. **Keep project facts in project records.** Generalize away hostnames,
-   usernames, attempt IDs, temporary paths, and one-off commands unless the
-   skill is intentionally environment-specific.
+Prefer a concise decision rule over instructions for ordinary coding. Add a
+validator or regression only when the property is objective, recurring, and
+worth mechanizing; use the smallest check that would have prevented the retry.
 
-Write the smallest rule that changes future behavior. Preserve useful existing
-content and remove stale, redundant, overfitted, or disproven text. Skill
-quality is measured by decision quality, not length.
+## Synchronize and finish
 
-## Mechanize repeatable prevention
-
-When a property is objectively checkable and likely to recur, add or improve a
-validator, preflight, schema check, or regression test instead of relying only
-on prose. Tests should exercise behavior or invariants, not merely assert that
-a sentence exists. Do not build automation for a low-confidence or one-off
-lesson.
-
-For delegated runtime incidents, mechanize the boundary between remote evidence
-and the next release: maintain a repository-owned promotion manifest (or an
-equivalent release record) that maps each applicable incident fix to its source
-evidence, canonical promotion commit, behavioral regression, and consuming
-profiles. A retrospective index alone is not a release gate.
-
-For code-backed skills, review both instructions and their scripts: correcting
-documentation while leaving a conflicting implementation is incomplete.
-
-## Synchronize the canonical source
-
-Identify the canonical editable source before changing an installed skill.
-Prefer this sequence:
-
-1. update the version-controlled plugin or skill source;
-2. update any relevant reference, script, test, and progress record;
-3. synchronize the installed runtime copy;
-4. run the skill validator plus relevant behavioral tests and `diff --check`;
-5. commit only the intended files, and push only when the repository and current
-   authorization already permit it.
-
-If the source mapping is unknown, do not guess or overwrite an unrelated
-repository. Update the safely identifiable copy, record the pending sync, and
-report the limitation. Never revert unrelated dirty worktree changes.
-
-## Preserve authority and secrets
-
-Learning does not expand permissions. Do not use it to change algorithm or
-experiment semantics, enable new services, access new credentials, or broaden
-the original task. Ask before encoding a disputed policy or a change whose
-correctness depends on user preference rather than evidence.
-
-Never record credentials, tokens, private payloads, or secret values in skills,
-examples, tests, commits, progress records, or learning summaries. Replace
-environment-specific values with roles, schemas, and redacted placeholders.
-
-## Finish the audit
-
-Before reporting completion:
-
-- confirm the new guidance does not conflict with neighboring skills;
-- verify installed and canonical copies match when both are maintained;
-- run structural validation and relevant tests;
-- record what was corrected, removed, added, and why;
-- state explicitly when no reusable lesson met the evidence threshold.
-
-Keep the user-facing summary short. The durable value belongs in the corrected
-skill and its tests, not in a long narrative reflection.
+Update the version-controlled canonical skill source first, then synchronize
+maintained installed copies. Run structural validation, relevant focused tests,
+and `diff --check`. Preserve unrelated worktree changes and existing authority
+boundaries. Summarize what changed and why; the durable value belongs in the
+corrected skill, canonical code, and incident record rather than a long chat
+retrospective.
