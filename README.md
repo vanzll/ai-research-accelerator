@@ -2,7 +2,7 @@
 
 **AI for Accelerating Research.** An author-first plugin for Codex and Claude Code that covers the research workflow from distributed training to publication. It packages ten primary skills:
 
-- `contract-driven-feature-development`: deliver substantial features through a concise contract, a fresh implementation Agent, and an independent fresh reviewer;
+- `contract-driven-feature-development`: deliver substantial features through a concise contract, risk-routed implementation ownership, and proportionate independent review;
 - `multinode-training`: design, launch, validate, and debug reliable multi-node GPU training;
 - `shared-filesystem-agent-coordination`: coordinate multiple Agent sessions through a fenced shared-file message bus;
 - `long-task-relay`: monitor long-running work with a token-free rule-based watcher that wakes the exact agent conversation only when judgment is needed;

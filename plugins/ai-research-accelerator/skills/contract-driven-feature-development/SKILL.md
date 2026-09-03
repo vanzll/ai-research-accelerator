@@ -1,12 +1,12 @@
 ---
 name: contract-driven-feature-development
-description: Plan and deliver substantial software features through a coordinator-authored contract, a fresh-context implementation agent, and an independent fresh-context reviewer. Use for new algorithms, cross-module work, shared core paths, or changes with meaningful regression or scientific risk; skip this workflow for small local edits.
+description: Plan and deliver substantial software features through a concise contract, risk-routed implementation ownership, and proportionate independent review. Use for new algorithms, cross-module work, shared core paths, or changes with meaningful regression or scientific risk; skip this workflow for small local edits.
 ---
 
 # Contract-Driven Feature Development
 
-Use context isolation to improve implementation and review quality without
-turning development into a heavyweight process.
+Use context isolation where it materially improves implementation or review
+quality without turning development into a heavyweight process.
 
 ## Route by risk
 
@@ -36,8 +36,8 @@ candidate passes the feature gate.
 
 ## Freeze a concise contract
 
-The main thread is the coordinator. Before delegation, write a compact handoff
-that contains only what a fresh Agent needs:
+The main thread is the coordinator. Before implementation or review, write a
+compact contract that contains only what the selected owner needs:
 
 - the objective and explicit non-goals;
 - the frozen base commit and authoritative implementation references;
@@ -63,13 +63,21 @@ new certificate. Do not duplicate that audit inside this workflow. If promotion
 is intentionally deferred, it is a declared blocker rather than work silently
 delegated to the implementation or training-node Agent.
 
-## Delegate implementation to a fresh context
+## Choose the implementation owner
 
-Launch an implementation Agent with no inherited conversational history. Give
-it the contract, necessary source files, and authoritative references, and let
-it work in an isolated worktree at the frozen base commit.
+Default to the main Agent when its context is coherent, the ownership boundary
+is clear, and it can implement the candidate directly. A substantial label alone
+does not justify paying the context-reconstruction and integration cost of a
+fresh implementer.
 
-The implementation Agent must:
+Use one fresh-context implementation Agent when at least one concrete condition
+applies: the main context is demonstrably degraded or contradictory; the work is
+a large separable backend or subsystem with a compact handoff; or parallel
+ownership materially shortens the critical path without sharing mutable files.
+Give that Agent the contract, necessary source files, and authoritative
+references, and let it work in an isolated worktree at the frozen base commit.
+
+Whichever Agent implements the feature must:
 
 - keep new behavior additive and behind an explicit switch when existing
   behavior must remain available;
@@ -79,11 +87,20 @@ The implementation Agent must:
   source strings or expected wording;
 - leave a focused diff and a reproducible test report.
 
-## Review from an independent fresh context
+## Review in proportion to risk
 
-Use a different fresh Agent for review. Provide the same contract, the final
-diff, authoritative references, and test results, but do not provide the
-implementer's reasoning, desired verdict, or suspected findings.
+Small, local, well-covered changes need no independent reviewer when targeted
+behavioral tests and frozen regressions directly establish correctness. For a
+new algorithm/backend, shared-core change, or scientifically silent failure
+risk, use one fresh-context reviewer after the candidate is stable. Provide the
+contract, final diff, authoritative references, and test results, but do not
+provide the implementer's reasoning, desired verdict, or suspected findings.
+
+One reviewer is the default ceiling. Add a second only when the first review
+exposes a genuinely separate expert domain, leaves a material disputed finding,
+or the resulting fix changes the contract or architecture. Do not run several
+reviewers in parallel merely to increase confidence; behavioral tests and
+primary references are the evidence base.
 
 The reviewer checks, in this order:
 
@@ -95,13 +112,13 @@ The reviewer checks, in this order:
 5. whether tests exercise the failure-prone behavior and realistic topology;
 6. remaining evidence gaps.
 
-Report findings first with concrete file references. The implementation Agent
+Report findings first with concrete file references. The implementation owner
 addresses findings; the reviewer does not silently redefine the contract.
 
-Use one independent review of the stable candidate. After localized fixes,
-verify the reported findings and affected regressions; do not restart an
-unbounded full review unless the contract, architecture, or frozen behavior
-changed materially.
+When the risk route requires independent review, review the stable candidate
+once. After localized fixes, verify the reported findings and affected
+regressions; do not restart an unbounded full review unless the contract,
+architecture, or frozen behavior changed materially.
 
 ## Integrate in the main thread
 
@@ -114,7 +131,7 @@ hardware, distributed, or external-service behavior cannot be validated
 locally. Avoid duplicated reviews, repeated full suites, and repeated smoke runs
 without a changed contract or invalidated certificate.
 
-Do not claim this workflow was completed when fresh contexts were unavailable.
-A fresh Agent is context-isolated, not context-free: omitting the contract or
-known-good evidence reduces independence to guesswork. Delegation never expands
-the user's permissions or authorizes unrelated changes.
+Do not claim an independent review was completed when a required fresh reviewer
+was unavailable. A fresh Agent is context-isolated, not context-free: omitting
+the contract or known-good evidence reduces independence to guesswork.
+Delegation never expands the user's permissions or authorizes unrelated changes.

@@ -1,5 +1,20 @@
 # Development Track
 
+## 2026-09-03: Make fresh implementation and review proportionate
+
+- Changed substantial feature development to default to the context-aware main
+  Agent when ownership is clear and its context remains coherent. A fresh
+  implementer is now conditional on degraded context, a large separable
+  subsystem, or concrete critical-path parallelism rather than mandatory.
+- Small, behaviorally covered changes require no independent reviewer. New
+  algorithms, backends, shared-core changes, and silent scientific risks use one
+  fresh reviewer by default; a second requires a distinct expert domain, an
+  unresolved material dispute, or a contract/architecture-changing fix.
+- Updated skill discovery metadata and plugin interfaces so automatic routing
+  no longer advertises the old mandatory two-Agent implementation workflow.
+- Raised the plugin version to `0.11.1` so installations can identify the
+  behavior change.
+
 ## 2026-09-03: Separate feature development from multi-node release assurance
 
 - Refined the development and experiment-launch workflow after a mixed

@@ -1,4 +1,4 @@
 interface:
   display_name: "Contract-Driven Feature Development"
-  short_description: "Build large features with fresh implementation and review."
-  default_prompt: "Use a concise frozen contract, a fresh implementation agent, and an independent fresh reviewer to deliver this substantial feature without regressing existing behavior."
+  short_description: "Build large features with risk-routed implementation and review."
+  default_prompt: "Use a concise frozen contract, let the main agent implement unless a fresh implementer has a concrete advantage, and apply at most one independent reviewer by default to deliver this substantial feature without regressing existing behavior."
