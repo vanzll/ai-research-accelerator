@@ -194,20 +194,6 @@ launcher digest. The remote prompt then carries the bundle path/hash, target
 identity, one bootstrap command, repair authority, and success lifecycle instead
 of duplicating stable launch details in prose.
 
-Treat the bundle as the transitive executable trust root, not a list of obvious
-entrypoints. Hash every repository-owned script, patch, config, and verifier
-that the launcher or coordinator executes on the accepted path, including
-indirect asset validators. Add a profile test that fails when a required
-executable is absent from the bundle; otherwise a verifier can drift while the
-bundle hash still passes.
-
-Separate portable asset content identity from deployment location. Pin the
-repository, revision, required file identities, and content manifest, then bind
-the resolved root into the immutable attempt environment. Do not compare a
-portable profile against a fixed manifest hash that embeds a site-specific
-absolute path. A location-bound profile may retain such a hash when that exact
-root is part of its explicit contract.
-
 As a final one-shot check, subtract the prompt prose: reconstruct the launch
 from the candidate checkout, site bootstrap, launch bundle, and single command.
 Compare that environment and argv with the latest sustained-success runtime.

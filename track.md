@@ -826,13 +826,3 @@
   remote Goal execution and bounded operational repair, a repository-root
   `踩坑记录/` record with evidence and Git delta, then incremental critical
   verification and canonical code absorption before the next related prompt.
-# 2026-09-04 - Executable bundle and portable asset identity
-
-- A final public DanceGRPO release review found two general release-gate gaps:
-  an absolute-path-bearing Qwen manifest was compared with a fixed hash after
-  the profile became location-portable, and two asset verifiers executed by the
-  MPI coordinator were omitted from launch-bundle coverage.
-- `multinode-training/references/production-runtime-promotion.md` now requires
-  launch bundles to cover the transitive repository-owned executable path and
-  separates pinned asset content identity from deployment location. This is a
-  narrow correction to production promotion; no unrelated skill changed.
