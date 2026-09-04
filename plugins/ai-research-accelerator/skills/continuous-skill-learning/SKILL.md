@@ -1,6 +1,6 @@
 ---
 name: continuous-skill-learning
-description: Distill verified lessons from user corrections, delegated runs, incidents, and surprising outcomes into concise reusable skills and canonical code. Use automatically when evidence exposes a reusable workflow defect; correct existing guidance before adding new rules.
+description: Carry verified lessons from delegated runs and incidents into task context and canonical code, using the latest validated successful commit as the next implementation baseline. Update skills only when evidence exposes a reusable workflow defect.
 ---
 
 # Continuous Skill Learning
@@ -12,8 +12,9 @@ not model training, and it must not turn every correction into a new process.
 
 After the primary task is stable, perform a short learning audit when a user
 correction, avoidable retry, real runtime incident, or successful repair exposes
-a reusable decision problem. Do not interrupt urgent recovery to edit skills.
-A valid audit may conclude that no reusable change is needed.
+a reusable decision problem. The normal result is a verified code baseline and
+updated incident watermark, not a skill edit. A valid audit may conclude that no
+change is needed.
 
 ## Use one durable interaction medium
 
@@ -41,11 +42,15 @@ validated cause. A successful combined retry does not prove every included
 change was necessary.
 
 Before a related implementation or prompt, read only incident records newer
-than the last reviewed watermark. Classify each new item as applicable,
-already present, obsolete, site-specific, uncertain, or scientific. Promote an
-applicable operational code repair into canonical code before asking another
-remote Agent to rediscover it. Scientific or uncertain changes require explicit
-approval rather than silent promotion.
+than the last reviewed watermark and bring their relevant evidence into the
+current task context. Extract the supplied and successful commits and commands,
+verify the material diff, then use the latest validated successful commit, or a
+canonical descendant proven to contain its applicable repairs, as the baseline
+for the new work. Apply only the newly declared scientific delta on top of that
+baseline. Promote a missing applicable operational repair before asking another
+remote Agent to rediscover it; scientific or uncertain changes require explicit
+approval. Advance the watermark after this triage, including a valid no-change
+result.
 
 Record two independent outcomes when relevant:
 
@@ -60,17 +65,18 @@ already use one.
 
 ## Change the narrowest owner
 
-Be critical of both the existing workflow and the new retrospective. Delete or
-replace wrong guidance instead of appending contradictions. Update only the
-skill whose core responsibility made the failed decision; keep project facts in
-the project incident record. Create a new skill only for a genuinely separate,
-recurring capability.
+Absorbing an incident does not itself justify editing a skill. Be critical of
+both the existing workflow and the retrospective. Change only the skill whose
+core responsibility contains a demonstrated reusable decision defect; keep
+project facts and code lineage in the repository incident record. Replace wrong
+guidance instead of appending contradictions, and create a new skill only for a
+genuinely separate recurring capability.
 
 Prefer a concise decision rule over instructions for ordinary coding. Add a
 validator or regression only when the property is objective, recurring, and
 worth mechanizing; use the smallest check that would have prevented the retry.
 
-## Synchronize and finish
+## Synchronize only when a skill changes
 
 Update the version-controlled canonical skill source first, then synchronize
 maintained installed copies. Run structural validation, relevant focused tests,
